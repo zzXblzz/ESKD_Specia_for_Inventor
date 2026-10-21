@@ -614,9 +614,11 @@ namespace GroupSpecB
                 if (Array.IndexOf(Sections.Order, sec) < 0) sec = "";
                 if (sec == "")
                 {
-                    if (isContent || IsStandardByName(it.Name, it.Designation)) sec = Sections.Standard;
+                    // единица измерения проверяется первой: у материалов в наименовании почти всегда есть
+                    // ГОСТ («Лист Б-ПН-2 ГОСТ 19903-2015», м²), но это не стандартные изделия
+                    if (unit != "") sec = Sections.Materials;
+                    else if (isContent || IsStandardByName(it.Name, it.Designation)) sec = Sections.Standard;
                     else if (row.BOMStructure == BOMStructureEnum.kPurchasedBOMStructure) sec = Sections.Other;
-                    else if (unit != "") sec = Sections.Materials;
                     else if (isVirtual) sec = Sections.Other;
                     else if (isAsm) sec = Sections.Assemblies;
                     else sec = Sections.Parts;
