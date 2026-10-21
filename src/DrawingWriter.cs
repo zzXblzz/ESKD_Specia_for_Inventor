@@ -234,7 +234,10 @@ namespace GroupSpecB
                 if (top > limit + 0.01)
                     Warnings.Add("Спецификация (" + n + " строк) не помещается над основной надписью листа «" + sh.Name +
                                  "»: таблица выше рамки на " + Math.Ceiling(top - limit) + " мм. Выберите больший формат листа или выведите спецификацию на отдельные листы.");
-                DrawTable2106(page, right - ColX2106[ColX2106.Length - 1], top, bottom, n);
+                double dx = right - ColX2106[ColX2106.Length - 1];
+                DrawTable2106(page, dx, top, bottom, n);
+                // на листе «СП-N» контур таблицы — рамка листа; над основной надписью его рисуем сами
+                Rect(ColX2106[0] + dx, bottom, right, top, true);
             }
             finally
             {
