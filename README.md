@@ -1,4 +1,8 @@
-﻿# GroupSpecB — групповая спецификация по ГОСТ 2.113-75, вариант Б
+# ESKD_Specia_SchlosserV — спецификация по ГОСТ 2.106 и групповая по ГОСТ 2.113-75, вариант Б
+
+Прежнее имя надстройки — GroupSpecB. Внутренние имена (атрибут чертежа `GroupSpecB/Data`, папка
+`%APPDATA%\GroupSpecB` с параметрами и журналом, ClassId) не менялись: сохранённые спецификации и
+параметры продолжают работать. `build.ps1 -Install` удаляет прежний `GroupSpecB.addin`.
 
 Надстройка-компаньон к ESKD Specia для Autodesk Inventor 2026. Формирует групповую спецификацию,
 в которой у каждого исполнения своя графа «Кол. на исполн.» (вариант Б, п. 5.5.2 ГОСТ 2.113-75):
@@ -246,9 +250,9 @@ Visual Studio не нужна: используется компилятор .NE
 powershell -ExecutionPolicy Bypass -File build.ps1 -Install
 ```
 
-Скрипт собирает `bin\GroupSpecB.dll`, `bin\TestRunner.exe`, `bin\UnitTests.exe` и копирует
-`GroupSpecB.addin` с полным путём к собранной DLL в `%APPDATA%\Autodesk\Inventor 2026\Addins`. В исходном
-`GroupSpecB.addin` путь относительный — его подставляет скрипт, так что папка может лежать где угодно. После этого перезапустите Inventor. Для другой версии
+Скрипт собирает `bin\ESKD_Specia_SchlosserV.dll`, `bin\TestRunner.exe`, `bin\UnitTests.exe` и копирует
+`ESKD_Specia_SchlosserV.addin` с полным путём к собранной DLL в `%APPDATA%\Autodesk\Inventor 2026\Addins`. В исходном
+`ESKD_Specia_SchlosserV.addin` путь относительный — его подставляет скрипт, так что папка может лежать где угодно. После этого перезапустите Inventor. Для другой версии
 используйте `-InventorVersion 2025` (interop-типы встроены в DLL; проверено только на Inventor 2026).
 
 `build.ps1 -Test` дополнительно запускает `UnitTests.exe` — проверки логики без Inventor (сведение BOM,

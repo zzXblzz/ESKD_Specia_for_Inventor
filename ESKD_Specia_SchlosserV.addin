@@ -2,9 +2,9 @@
 <Addin Type="Standard">
   <ClassId>{6B3C2E1A-8F4D-4C9B-A7E2-3D51B0C4F7A9}</ClassId>
   <ClientId>{6B3C2E1A-8F4D-4C9B-A7E2-3D51B0C4F7A9}</ClientId>
-  <DisplayName>Групповая спецификация (ГОСТ 2.113, вариант Б)</DisplayName>
-  <Description>Компаньон ESKD Specia: групповая спецификация по варианту Б, исполнения из BOM параметрической сборки</Description>
-  <Assembly>GroupSpecB.dll</Assembly>
+  <DisplayName>ESKD_Specia_SchlosserV</DisplayName>
+  <Description>Компаньон ESKD Specia: спецификация по ГОСТ 2.106 (формы 1, 1а) и групповая по ГОСТ 2.113, вариант Б</Description>
+  <Assembly>ESKD_Specia_SchlosserV.dll</Assembly>
   <LoadOnStartUp>1</LoadOnStartUp>
   <UserUnloadable>1</UserUnloadable>
   <Hidden>0</Hidden>
