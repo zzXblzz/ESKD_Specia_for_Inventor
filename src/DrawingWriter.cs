@@ -13,6 +13,7 @@ namespace GroupSpecB
         public const string AttrSet = "GroupSpecB";
         public const string AttrData = "Data";
         public const string SheetAttrSet = "GroupSpecB_Sheet";
+        public const string TableAttrSet = "GroupSpecB_Table";   // эскиз-таблица над основной надписью листа чертежа
         public const string SheetPrefix = "ГС";
         public const string SheetPrefix2106 = "СП";
 
@@ -109,7 +110,21 @@ namespace GroupSpecB
                 else if (RemoveEmptySheets && sh.DrawingViews.Count == 0 && sh.Sketches.Count == 0 && sh.SketchedSymbols.Count == 0)
                     emptyForeign.Add(sh);
             }
+            RemoveTables();
             EnsureStyles();
+            if (data.OnDrawing)
+            {
+                Sheet target = TargetSheet();
+                if (target != null)
+                {
+                    WriteOnSheet(target);
+                    foreach (Sheet sh in old) sh.Delete(false);
+                    target.Activate();
+                    SaveData(dwg, data);
+                    return 1;
+                }
+                Warnings.Add("В чертеже нет листа для спецификации над основной надписью — она выведена на отдельные листы.");
+            }
             // вёрстка строится, когда открыт эскиз первого листа: перенос текста считается по фактической
             // ширине надписей шрифтом листа (MeasureMm), а не по средней ширине символа
             List<SpecPage> pages = null;
@@ -155,6 +170,77 @@ namespace GroupSpecB
             if (firstNew != null) firstNew.Activate();
             SaveData(dwg, data);
             return pages.Count;
+        }
+
+        static bool IsSpecSheet(Sheet sh)
+        {
+            try { return sh.AttributeSets.NameIsUsed[SheetAttrSet]; } catch { return false; }
+        }
+
+        /// <summary>Лист для таблицы над основной надписью: активный, а если активен лист «СП-N» — первый лист чертежа.</summary>
+        Sheet TargetSheet()
+        {
+            Sheet act = null;
+            try { act = dwg.ActiveSheet; } catch { }
+            if (act != null && !IsSpecSheet(act)) return act;
+            foreach (Sheet sh in dwg.Sheets) if (!IsSpecSheet(sh)) return sh;
+            return null;
+        }
+
+        /// <summary>Удаляет таблицы спецификации, выведенные ранее над основной надписью (на любом листе).</summary>
+        void RemoveTables()
+        {
+            foreach (Sheet sh in dwg.Sheets)
+            {
+                List<DrawingSketch> ours = new List<DrawingSketch>();
+                foreach (DrawingSketch s in sh.Sketches)
+                {
+                    try { if (s.AttributeSets.NameIsUsed[TableAttrSet]) ours.Add(s); } catch { }
+                }
+                foreach (DrawingSketch s in ours) s.Delete();
+            }
+        }
+
+        /// <summary>Спецификация по ГОСТ 2.106 на листе чертежа: таблица формы 1 шириной 185 мм над основной
+        /// надписью, правый край — по её правому краю. Высота — по числу строк; если таблица выше рамки — предупреждение.</summary>
+        void WriteOnSheet(Sheet sh)
+        {
+            sh.Activate();
+            double right, bottom;
+            TitleBlock tb = null;
+            try { tb = sh.TitleBlock; } catch { }
+            if (tb != null)
+            {
+                Box2d b = tb.RangeBox;
+                right = b.MaxPoint.X * 10; bottom = b.MaxPoint.Y * 10;
+            }
+            else
+            {
+                right = sh.Width * 10 - 5; bottom = 5;
+                Warnings.Add("На листе «" + sh.Name + "» нет основной надписи — таблица спецификации выведена от правого нижнего угла рамки.");
+            }
+            sk = sh.Sketches.Add();
+            sk.Name = "Спецификация";
+            try { sk.AttributeSets.Add(TableAttrSet); } catch (Exception ex) { Log.Write("Атрибут таблицы спецификации", ex); }
+            sk.Edit();
+            sk.DeferUpdates = true;
+            try
+            {
+                double h = data.Settings.FontHeight;
+                SpecPage page = Layout.Build(data, Warnings, text => MeasureMm(text, h))[0];
+                int n = page.Lines.Count;
+                double top = bottom + (Head2106Top - Head2106Bottom) + RowH * n;
+                double limit = sh.Height * 10 - 5;
+                if (top > limit + 0.01)
+                    Warnings.Add("Спецификация (" + n + " строк) не помещается над основной надписью листа «" + sh.Name +
+                                 "»: таблица выше рамки на " + Math.Ceiling(top - limit) + " мм. Выберите больший формат листа или выведите спецификацию на отдельные листы.");
+                DrawTable2106(page, right - ColX2106[ColX2106.Length - 1], top, bottom, n);
+            }
+            finally
+            {
+                sk.DeferUpdates = false;
+                sk.ExitEdit();
+            }
         }
 
         // ---------------------------------------------------------------- стили и примитивы
@@ -423,8 +509,6 @@ namespace GroupSpecB
         /// входит в последнюю строку.</summary>
         void DrawPage2106(SpecPage page, int totalSheets)
         {
-            double h = data.Settings.FontHeight;
-            double[] cx = ColX2106;
             int cap = Layout.Capacity(page, data.Settings);
             double titleTop = FB + (page.First ? 40 : 15);
             double yb = Head2106Bottom - RowH * cap;
@@ -432,31 +516,47 @@ namespace GroupSpecB
 
             Rect(FL, FB, FR, FT, true);
             DrawExtraGraphs2106(page.First);
+            DrawTable2106(page, 0, Head2106Top, yb, cap);
+
+            // --- основная надпись
+            if (page.First) TitleBlockForm2(page, totalSheets);
+            else TitleBlockForm2a(page);
+        }
+
+        /// <summary>Таблица формы 1 ГОСТ 2.106: головка 15 мм с верхом на top, строки вниз до yb.
+        /// dx — сдвиг граф относительно листа «СП-N» (рамка с полем подшивки 20 мм).</summary>
+        void DrawTable2106(SpecPage page, double dx, double top, double yb, int cap)
+        {
+            double h = data.Settings.FontHeight;
+            double[] cx = new double[ColX2106.Length];
+            for (int c = 0; c < cx.Length; c++) cx[c] = ColX2106[c] + dx;
+            double xl = cx[0], xr = cx[cx.Length - 1];
+            double headBottom = top - (Head2106Top - Head2106Bottom);
 
             // --- головка таблицы
-            Line(FL, Head2106Bottom, FR, Head2106Bottom, true);
-            Line(FL, yb, FR, yb, true);
-            for (int c = 1; c < cx.Length - 1; c++) Line(cx[c], Head2106Top, cx[c], yb, true);
-            double hy = (Head2106Top + Head2106Bottom) / 2;
+            Line(xl, headBottom, xr, headBottom, true);
+            Line(xl, yb, xr, yb, true);
+            for (int c = 1; c < cx.Length - 1; c++) Line(cx[c], top, cx[c], yb, true);
+            double hy = (top + headBottom) / 2;
             TextVertical((cx[0] + cx[1]) / 2, hy, "Формат", 2.5);
             TextVertical((cx[1] + cx[2]) / 2, hy, "Зона", 2.5);
             TextVertical((cx[2] + cx[3]) / 2, hy, "Поз.", 2.5);
-            Text(cx[3], Head2106Bottom, cx[4], Head2106Top, "Обозначение", 'C', h);
-            Text(cx[4], Head2106Bottom, cx[5], Head2106Top, "Наименование", 'C', h);
+            Text(cx[3], headBottom, cx[4], top, "Обозначение", 'C', h);
+            Text(cx[4], headBottom, cx[5], top, "Наименование", 'C', h);
             TextVertical((cx[5] + cx[6]) / 2, hy, "Кол.", h);
-            Text(cx[6], hy, cx[7], Head2106Top, "Приме-", 'C', h);   // в графу 22 мм — в две строки
-            Text(cx[6], Head2106Bottom, cx[7], hy, "чание", 'C', h);
+            Text(cx[6], hy, cx[7], top, "Приме-", 'C', h);   // в графу 22 мм — в две строки
+            Text(cx[6], headBottom, cx[7], hy, "чание", 'C', h);
 
             // --- строки
             for (int r = 1; r < cap; r++)
             {
-                double y = Head2106Bottom - r * RowH;
-                if (y > yb + 0.01) Line(FL, y, FR, y, false);
+                double y = headBottom - r * RowH;
+                if (y > yb + 0.01) Line(xl, y, xr, y, false);
             }
             for (int i = 0; i < page.Lines.Count && i < cap; i++)
             {
                 SpecLine l = page.Lines[i];
-                double y2 = Head2106Bottom - i * RowH, y1 = Math.Max(y2 - RowH, yb);
+                double y2 = headBottom - i * RowH, y1 = Math.Max(y2 - RowH, yb);
                 if (l.Kind == LineKind.Blank) continue;
                 if (l.Kind == LineKind.Header)
                 {
@@ -471,10 +571,6 @@ namespace GroupSpecB
                 Text(cx[5], y1, cx[6], y2, l.Qty[0], 'C', h);
                 Text(cx[6], y1, cx[7], y2, l.Note, 'L', h);
             }
-
-            // --- основная надпись
-            if (page.First) TitleBlockForm2(page, totalSheets);
-            else TitleBlockForm2a(page);
         }
 
         /// <summary>Дополнительные графы по ГОСТ 2.104 в поле подшивки слева (А4 книжный): снизу — «Инв. № подл.»,

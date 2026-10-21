@@ -43,7 +43,11 @@ static class TestRunner
             // --type 2.106 | 2.113 — тип спецификации, выбранный вручную (без флага — как сохранено / по числу 3D-моделей)
             int ti = Array.IndexOf(args, "--type");
             if (ti >= 0 && ti + 1 < args.Length) { data.SpecType = args[ti + 1]; SpecLogic.EnsureAssemblyDrawingRow(data); SpecLogic.Renumber(data); }
-            Console.WriteLine("TYPE " + data.EffectiveType() + (string.IsNullOrEmpty(data.SpecType) ? " (по числу 3D-моделей)" : ""));
+            // --ondrawing on|off — ГОСТ 2.106 над основной надписью листа чертежа
+            int oi = Array.IndexOf(args, "--ondrawing");
+            if (oi >= 0 && oi + 1 < args.Length) data.OnDrawingSheet = args[oi + 1] == "on";
+            Console.WriteLine("TYPE " + data.EffectiveType() + (string.IsNullOrEmpty(data.SpecType) ? " (по числу 3D-моделей)" : "") +
+                              (data.OnDrawing ? " на листе чертежа" : ""));
             if (Array.IndexOf(args, "--checks") >= 0)
             {
                 // перенос строки знаком $ и сжатие длинной строки
@@ -129,8 +133,10 @@ static class TestRunner
                 if (mo && model != null) model.Close(true);
             }
             t0 = DateTime.Now;
-            int n = new DrawingWriter(app, dwg, data) { RemoveEmptySheets = created }.Write(s => Console.WriteLine("  " + s));
+            DrawingWriter writer = new DrawingWriter(app, dwg, data) { RemoveEmptySheets = created };
+            int n = writer.Write(s => Console.WriteLine("  " + s));
             Console.WriteLine("sheets=" + n + " time=" + (DateTime.Now - t0).TotalSeconds.ToString("0.0") + "s");
+            foreach (string w in writer.Warnings) Console.WriteLine("LAYOUT WARN: " + w);
             List<string> names = new List<string>();
             foreach (Sheet sh in dwg.Sheets) names.Add(sh.Name);
             Console.WriteLine("drawing sheets: " + string.Join(", ", names));

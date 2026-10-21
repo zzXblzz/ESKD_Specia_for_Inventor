@@ -231,7 +231,7 @@ namespace GroupSpecB
                 int n = writer.Write(s => { try { app.StatusBarText = s; } catch { } });
                 layoutWarnings.AddRange(writer.Warnings);
                 tr.End();
-                app.StatusBarText = SpecTypes.Title(data.EffectiveType()) + ": листов — " + n;
+                app.StatusBarText = SpecTypes.Title(data.EffectiveType()) + (data.OnDrawing ? ": на листе чертежа" : ": листов — " + n);
             }
             catch (Exception ex)
             {

@@ -282,6 +282,18 @@ static class UnitTests
 
         SpecPage next = new SpecPage { Number = 2, Gost2106 = true };
         Eq(32, Layout.Capacity(next, data.Settings), "строк на последующих листах (форма 1а)");
+
+        // над основной надписью листа чертежа — одна таблица без разбиения на листы
+        for (int i = 0; i < 40; i++)
+            data.Rows.Add(new SpecRow { Key = "m" + i, Section = Sections.Materials, Name = "Материал " + i, Qty = { new QtyEntry(main.Key, "1") } });
+        Check(Layout.Build(data).Count > 1, "на листах «СП-N» — несколько листов");
+        data.OnDrawingSheet = true;
+        List<SpecPage> one = Layout.Build(data);
+        Eq(1, one.Count, "на листе чертежа — одна таблица");
+        Check(one[0].OnDrawing && one[0].Lines.Count > 40, "все строки в таблице над основной надписью");
+        Check(SpecData.FromXml(data.ToXml()).OnDrawingSheet, "выбор сохраняется в чертеже");
+        data.SpecType = SpecTypes.Gost2113;
+        Check(!data.OnDrawing && Layout.Build(data).Count > 1, "групповая — всегда на отдельных листах");
     }
 
     static string Kinds(SpecPage p)
