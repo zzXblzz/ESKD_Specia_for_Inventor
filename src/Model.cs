@@ -179,7 +179,7 @@ namespace GroupSpecB
         [Category("3. Вёрстка"), DisplayName("Шрифт")] public string FontName { get; set; }
         [Category("3. Вёрстка"), DisplayName("Наклонный шрифт")] public bool Italic { get; set; }
         [Category("3. Вёрстка"), DisplayName("Средняя ширина символа, мм"),
-         Description("Используется для переноса текста по строкам.")]
+         Description("Оценка ширины текста для предпросмотра в редакторе. При формировании листов перенос считается по фактической ширине надписей.")]
         public double CharWidth { get; set; }
         [Category("3. Вёрстка"), DisplayName("Свободных строк после раздела")] public int ReserveLines { get; set; }
 

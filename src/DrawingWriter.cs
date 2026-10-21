@@ -89,7 +89,6 @@ namespace GroupSpecB
         public int Write(Action<string> progress)
         {
             Warnings.Clear();
-            List<SpecPage> pages = Layout.Build(data, Warnings);
             List<Sheet> old = new List<Sheet>();
             List<Sheet> emptyForeign = new List<Sheet>();
             foreach (Sheet sh in dwg.Sheets)
@@ -101,11 +100,14 @@ namespace GroupSpecB
                     emptyForeign.Add(sh);
             }
             EnsureStyles();
-            List<string> note = Layout.DecadeNote(pages);
+            // вёрстка строится, когда открыт эскиз первого листа: перенос текста считается по фактической
+            // ширине надписей шрифтом листа (MeasureMm), а не по средней ширине символа
+            List<SpecPage> pages = null;
+            List<string> note = null;
             Sheet firstNew = null;
-            for (int i = 0; i < pages.Count; i++)
+            for (int i = 0; pages == null || i < pages.Count; i++)
             {
-                if (progress != null) progress("Лист " + (i + 1) + " из " + pages.Count);
+                if (progress != null) progress("Лист " + (i + 1) + (pages != null ? " из " + pages.Count : ""));
                 Sheet sh = dwg.Sheets.Add(DrawingSheetSizeEnum.kA4DrawingSheetSize,
                     PageOrientationTypeEnum.kLandscapePageOrientation, SheetPrefix + "-" + (i + 1), Type.Missing, Type.Missing);
                 sh.AttributeSets.Add(SheetAttrSet);
@@ -122,6 +124,12 @@ namespace GroupSpecB
                 sk.DeferUpdates = true;
                 try
                 {
+                    if (pages == null)
+                    {
+                        double h = data.Settings.FontHeight;
+                        pages = Layout.Build(data, Warnings, text => MeasureMm(text, h));
+                        note = Layout.DecadeNote(pages);
+                    }
                     DrawPage(pages[i], pages.Count, i == 0 ? note : null);
                 }
                 finally
