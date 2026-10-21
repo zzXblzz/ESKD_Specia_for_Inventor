@@ -308,7 +308,7 @@ namespace GroupSpecB
                     using (StreamReader r = new StreamReader(FilePath))
                         return (SpecSettings)new XmlSerializer(typeof(SpecSettings)).Deserialize(r);
             }
-            catch { }
+            catch (Exception ex) { Log.Write("Чтение Settings.xml", ex); }
             return new SpecSettings();
         }
 
@@ -320,7 +320,7 @@ namespace GroupSpecB
                 using (StreamWriter w = new StreamWriter(FilePath))
                     new XmlSerializer(typeof(SpecSettings)).Serialize(w, s);
             }
-            catch { }
+            catch (Exception ex) { Log.Write("Запись Settings.xml", ex); }
         }
     }
 }

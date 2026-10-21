@@ -105,7 +105,7 @@ namespace GroupSpecB
                         BomCollector.FillSettingsFromModel((Document)asm, Data.Settings);
                         if (opened) ((Document)asm).Close(true);
                     }
-                    catch { }
+                    catch (Exception ex) { Log.Write("Наименование изделия из модели основного исполнения", ex); }
                 }
                 Data.SourceKind = defs.Count > 0 ? defs[0].Kind : "";
                 SpecLogic.Merge(Data, boms);
@@ -117,7 +117,7 @@ namespace GroupSpecB
                 bool warn = errors.Count > 0 || dup.Count > 0 || boms.Count == 0;
                 return warn ? string.Join("\r\n\r\n", msg) : null;
             }
-            catch (Exception ex) { return "Ошибка чтения BOM: " + ex.Message; }
+            catch (Exception ex) { Log.Write("Чтение BOM", ex); return "Ошибка чтения BOM: " + ex.Message; }
         }
     }
 

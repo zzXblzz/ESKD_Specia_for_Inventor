@@ -61,7 +61,7 @@ namespace GroupSpecB
                 txTicksLeft = TxTicks;
                 txTimer.Start();
             }
-            catch { }
+            catch (Exception ex) { Log.Write("Активация чертежа", ex); }
         }
 
         void OnTxTimer(object sender, EventArgs e)
@@ -121,7 +121,7 @@ namespace GroupSpecB
                     foreach (CommandControl c in panel.CommandControls) if (c.InternalName == button.InternalName) has = true;
                     if (!has) panel.CommandControls.AddButton(button, true, true, "", false);
                 }
-                catch { }
+                catch (Exception ex) { Log.Write("Кнопка на ленте", ex); }
             }
         }
 
@@ -139,7 +139,7 @@ namespace GroupSpecB
                 if (DrawingWriter.HasData(dwg) || GlobalSettings.Load().SyncTitleOnSaveAllDrawings)
                     SpecTitleBlock.CopyFromFirstViewModel(app, dwg);
             }
-            catch { }   // сохранение не должно срываться из-за надстройки
+            catch (Exception ex) { Log.Write("Свойства основной надписи при сохранении", ex); }   // сохранение не должно срываться из-за надстройки
         }
 
         void OnExecute(NameValueMap context)
@@ -147,6 +147,7 @@ namespace GroupSpecB
             try { Commands.Run(app); }
             catch (Exception ex)
             {
+                Log.Write("Команда «Групповая спецификация»", ex);
                 MessageBox.Show(ex.Message + "\r\n\r\n" + ex.StackTrace, "Групповая спецификация", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }

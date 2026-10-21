@@ -283,7 +283,7 @@ namespace GroupSpecB
                 try { v = UserProp(f.PropertySets, SectionProp); }
                 finally { if (opened) try { f.Close(true); } catch { } }
             }
-            catch { }
+            catch (Exception ex) { Log.Write("spec_section фабрики", ex); }
             factorySectionCache[fp] = v;
             return v;
         }
@@ -478,7 +478,7 @@ namespace GroupSpecB
                     if (originalRow != null) { factory.DefaultRow = originalRow; asm.Update(); }
                     if (originalState != null) originalState.Activate();
                 }
-                catch { }
+                catch (Exception ex) { Log.Write("Возврат исходной строки iAssembly / состояния модели", ex); }
                 try { if (!wasDirty) asm.Dirty = false; } catch { }
             }
             return res;

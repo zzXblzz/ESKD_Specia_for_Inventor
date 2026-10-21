@@ -264,7 +264,7 @@ namespace GroupSpecB
                 {
                     string mv = Value(p, f);
                     if (mv == "" || mv == Value(d, f)) continue;
-                    try { SetValue(d, f, mv); } catch { }
+                    try { SetValue(d, f, mv); } catch (Exception ex) { Log.Write("Свойство чертежа «" + f.Label + "» при сохранении", ex); }
                 }
             }
             finally { if (opened) try { p.Close(true); } catch { } }

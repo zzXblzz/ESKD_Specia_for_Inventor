@@ -239,6 +239,12 @@ powershell -ExecutionPolicy Bypass -File build.ps1 -Install
 | `src\EditorForm.cs` | окно редактора |
 | `src\Model.cs` | данные и настройки (XML) |
 
+## Журнал ошибок
+
+Ошибки, которые надстройка не показывает в окне (например, при сохранении чертежа или при прерывании
+транзакции ESKD Specia), пишутся в `%APPDATA%\GroupSpecB\GroupSpecB.log`. Если что-то работает не так,
+приложите этот файл к описанию проблемы.
+
 ## Особенности Inventor API (учтены в коде)
 
 * Пока в .NET живы обёртки над `BOMView`/`BOMRow`, Inventor **не пересчитывает BOM** после смены

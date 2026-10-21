@@ -294,7 +294,7 @@ namespace GroupSpecB
                 tb.WidthScale = Math.Max(0.3, scale * availMm / w * 0.98);
                 tb.Origin = origin;
             }
-            catch { }
+            catch (Exception ex) { Log.Write("Сжатие надписи по ширине", ex); }
         }
 
         readonly Dictionary<string, double> widthCache = new Dictionary<string, double>();
