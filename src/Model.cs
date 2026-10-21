@@ -71,6 +71,26 @@ namespace GroupSpecB
         public bool UserAdded;      // исполнение добавлено кнопкой «Добавить исполнение»
     }
 
+    /// <summary>Сведения о составной части, прочитанные из BOM одного исполнения (заполняет BomCollector).</summary>
+    public class BomItem
+    {
+        public string Key;
+        public string Designation;
+        public string Name;
+        public string Format;
+        public string Note;
+        public string Section;
+        public string Unit;
+        public string ItemNumber;
+        public string Qty;
+    }
+
+    public class ExecutionBom
+    {
+        public Execution Execution;
+        public List<BomItem> Items = new List<BomItem>();
+    }
+
     public class QtyEntry
     {
         [XmlAttribute] public string Exec;

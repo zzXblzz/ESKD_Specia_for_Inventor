@@ -5,26 +5,6 @@ using Inventor;
 
 namespace GroupSpecB
 {
-    /// <summary>Сведения о составной части, прочитанные из BOM одного исполнения.</summary>
-    public class BomItem
-    {
-        public string Key;
-        public string Designation;
-        public string Name;
-        public string Format;
-        public string Note;
-        public string Section;
-        public string Unit;
-        public string ItemNumber;
-        public string Qty;
-    }
-
-    public class ExecutionBom
-    {
-        public Execution Execution;
-        public List<BomItem> Items = new List<BomItem>();
-    }
-
     /// <summary>Чтение исполнений и их BOM из параметрической сборки.</summary>
     public static class BomCollector
     {

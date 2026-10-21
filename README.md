@@ -217,9 +217,14 @@ Visual Studio не нужна: используется компилятор .NE
 powershell -ExecutionPolicy Bypass -File build.ps1 -Install
 ```
 
-Скрипт собирает `bin\GroupSpecB.dll` и `bin\TestRunner.exe` и копирует `GroupSpecB.addin` в
-`%APPDATA%\Autodesk\Inventor 2026\Addins`. После этого перезапустите Inventor. Для другой версии
+Скрипт собирает `bin\GroupSpecB.dll`, `bin\TestRunner.exe`, `bin\UnitTests.exe` и копирует
+`GroupSpecB.addin` с полным путём к собранной DLL в `%APPDATA%\Autodesk\Inventor 2026\Addins`. В исходном
+`GroupSpecB.addin` путь относительный — его подставляет скрипт, так что папка может лежать где угодно. После этого перезапустите Inventor. Для другой версии
 используйте `-InventorVersion 2025` (interop-типы встроены в DLL; проверено только на Inventor 2026).
+
+`build.ps1 -Test` дополнительно запускает `UnitTests.exe` — проверки логики без Inventor (сведение BOM,
+разделы, позиции, номера исполнений, сокращения «-02», вёрстка листов и десятков). Их же можно
+собрать и запустить на любом компьютере с .NET Framework или Mono.
 
 `TestRunner.exe <сборка.iam | чертёж.idw> <выход.idw> [--form] [--add исполнение.iam]` подключается
 к запущенному Inventor и проверяет всю цепочку без загрузки надстройки: собирает исполнения,
@@ -238,6 +243,9 @@ powershell -ExecutionPolicy Bypass -File build.ps1 -Install
 | `src\DrawingWriter.cs` | отрисовка форм 1б/1а и основных надписей 2/2а, хранение данных |
 | `src\EditorForm.cs` | окно редактора |
 | `src\Model.cs` | данные и настройки (XML) |
+| `src\Log.cs` | журнал ошибок `%APPDATA%\GroupSpecB\GroupSpecB.log` |
+| `test\TestRunner.cs` | прогон всей цепочки через запущенный Inventor |
+| `test\UnitTests.cs` | проверки логики без Inventor (`build.ps1 -Test`) |
 
 ## Журнал ошибок
 

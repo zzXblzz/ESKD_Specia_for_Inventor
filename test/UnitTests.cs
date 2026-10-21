@@ -1,0 +1,198 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
+using GroupSpecB;
+
+// Проверки логики спецификации без Inventor: сведение BOM, разделы, позиции, исполнения, вёрстка.
+// Собираются из Model.cs, SpecLogic.cs, Layout.cs, Log.cs (без Inventor API) — build.ps1 -Test.
+// Код возврата: 0 — все проверки прошли, 1 — есть ошибки.
+static class UnitTests
+{
+    static int failed, passed;
+
+    static void Check(bool ok, string what)
+    {
+        if (ok) passed++;
+        else { failed++; Console.WriteLine("ОШИБКА: " + what); }
+    }
+
+    static void Eq(object expected, object actual, string what)
+    {
+        Check(Equals(expected, actual), what + ": ожидалось «" + expected + "», получено «" + actual + "»");
+    }
+
+    static int Main()
+    {
+        Console.OutputEncoding = Encoding.UTF8;
+        Run("Разбор номера исполнения", SplitExecution);
+        Run("Количество", FormatQty);
+        Run("Слияние строк и единицы измерения", MergeUnits);
+        Run("Подписи граф исполнений", ExecutionLabels);
+        Run("Позиции и резерв между разделами", Positions);
+        Run("Сокращение «-02» только для обозначений ЕСКД", Abbreviation);
+        Run("Запись длиннее листа", LongRecord);
+        Run("Больше 10 исполнений", Decades);
+        Run("Перенос по замеру текста", WrapMeasured);
+        Console.WriteLine("Пройдено: " + passed + ", ошибок: " + failed);
+        return failed == 0 ? 0 : 1;
+    }
+
+    static void Run(string name, Action test)
+    {
+        try { test(); }
+        catch (Exception ex) { failed++; Console.WriteLine("ОШИБКА: " + name + ": " + ex); }
+    }
+
+    // ------------------------------------------------------------------ помощники
+
+    static Execution Exec(string designation)
+    {
+        return new Execution { Key = designation, Designation = designation, Kind = "File", Path = designation };
+    }
+
+    static BomItem Item(string key, string designation, string name, string section, string qty, string unit = "")
+    {
+        return new BomItem { Key = key, Designation = designation, Name = name, Section = section, Qty = qty, Unit = unit,
+                             Format = "", Note = "", ItemNumber = "" };
+    }
+
+    static SpecData Merge(params ExecutionBom[] boms)
+    {
+        SpecData data = new SpecData();
+        data.Settings.AddAssemblyDrawing = false;
+        SpecLogic.Merge(data, new List<ExecutionBom>(boms));
+        return data;
+    }
+
+    static ExecutionBom Bom(Execution e, params BomItem[] items)
+    {
+        return new ExecutionBom { Execution = e, Items = new List<BomItem>(items) };
+    }
+
+    static List<SpecLine> DataLines(List<SpecPage> pages)
+    {
+        List<SpecLine> r = new List<SpecLine>();
+        foreach (SpecPage p in pages) foreach (SpecLine l in p.Lines) if (l.Kind == LineKind.Data) r.Add(l);
+        return r;
+    }
+
+    // ------------------------------------------------------------------ проверки
+
+    static void SplitExecution()
+    {
+        string b, n;
+        Check(SpecLogic.SplitExecution("АБВГ.123456.789-02", out b, out n), "АБВГ.123456.789-02 — исполнение");
+        Eq("АБВГ.123456.789", b, "базовое обозначение");
+        Eq("02", n, "номер исполнения");
+        Check(!SpecLogic.SplitExecution("АБВГ.123456.789", out b, out n), "без номера — основное исполнение");
+        Eq("АБВГ.123456.789", SpecLogic.StripDocCode("АБВГ.123456.789СБ"), "код документа СБ отбрасывается");
+        Check(!SpecLogic.SplitExecution("ГОСТ 7798-70", out b, out n), "«ГОСТ 7798-70» — не исполнение");
+        Check(!SpecLogic.SplitExecution("Болт М8х20 ГОСТ 7798-70", out b, out n), "наименование с ГОСТ — не исполнение");
+        Check(!SpecLogic.SplitExecution("DIN 6921-8", out b, out n), "«DIN 6921-8» — не исполнение");
+    }
+
+    static void FormatQty()
+    {
+        Eq("666,667", SpecLogic.FormatQty(666.6666), "округление до 3 знаков");
+        Eq("0,5", SpecLogic.FormatQty(0.5), "нули в конце не пишутся");
+        Eq("2", SpecLogic.FormatQty(2), "целое");
+    }
+
+    static void MergeUnits()
+    {
+        Execution e = Exec("АБВГ.100000.001");
+        SpecData data = Merge(Bom(e,
+            Item("a.ipt", "АБВГ.200000.001", "Панель", Sections.Parts, "1"),
+            Item("a_copy.ipt", "АБВГ.200000.001", "Панель", Sections.Parts, "2"),
+            Item("m1", "", "Лист Б-ПН-2 ГОСТ 19903-2015", Sections.Materials, "0,25", "кг"),
+            Item("m2", "", "Лист Б-ПН-2 ГОСТ 19903-2015", Sections.Materials, "120", "мм")));
+        SpecRow panel = data.Rows.Find(r => r.Designation == "АБВГ.200000.001");
+        Eq("3", panel.GetQty(e.Key), "копии одной детали сливаются, количества складываются");
+        Eq(1, panel.MergedKeys.Count, "второй файл записан в MergedKeys");
+        Eq(2, data.Rows.FindAll(r => r.Section == Sections.Materials).Count, "материал в кг и в мм — две строки");
+    }
+
+    static void ExecutionLabels()
+    {
+        Execution main = Exec("АБВГ.100000.001"), e2 = Exec("АБВГ.100000.001-02"), e1 = Exec("АБВГ.100000.001-01");
+        SpecData data = Merge(Bom(e2, Item("x", "АБВГ.1.1", "Деталь", Sections.Parts, "1")),
+                              Bom(main, Item("x", "АБВГ.1.1", "Деталь", Sections.Parts, "1")),
+                              Bom(e1, Item("x", "АБВГ.1.1", "Деталь", Sections.Parts, "1")));
+        Eq("АБВГ.100000.001", data.Executions[0].Designation, "основное исполнение — первая графа");
+        Eq("–", data.Executions[0].Label, "подпись основного исполнения");
+        Eq("01", data.Executions[1].Label, "подпись -01");
+        Eq("02", data.Executions[2].Label, "подпись -02");
+        Eq("АБВГ.100000.001", SpecLogic.BaseDesignation(data), "базовое обозначение");
+    }
+
+    static void Positions()
+    {
+        Execution e = Exec("АБВГ.100000.001");
+        SpecData data = Merge(Bom(e,
+            Item("p1", "АБВГ.200000.001", "Деталь А", Sections.Parts, "1"),
+            Item("p2", "АБВГ.200000.002", "Деталь Б", Sections.Parts, "1"),
+            Item("s1", "", "Болт М8х20 ГОСТ 7798-70", Sections.Standard, "4")));
+        Eq("1", data.Rows.Find(r => r.Key == "p1").Pos, "первая деталь");
+        Eq("2", data.Rows.Find(r => r.Key == "p2").Pos, "вторая деталь");
+        Eq("5", data.Rows.Find(r => r.Key == "s1").Pos, "следующий раздел — после резерва в 2 номера");
+        Eq(0, SpecLogic.DuplicatePositions(data).Count, "повторов позиций нет");
+    }
+
+    static void Abbreviation()
+    {
+        Execution e = Exec("АБВГ.100000.001");
+        SpecData data = Merge(Bom(e,
+            Item("d1", "АБВГ.300000.001", "Скоба", Sections.Parts, "1"),
+            Item("d2", "АБВГ.300000.001-01", "Скоба", Sections.Parts, "1"),
+            Item("d3", "ГОСТ 1050-88", "Пруток", Sections.Parts, "1"),
+            Item("d4", "ГОСТ 1050-89", "Пруток", Sections.Parts, "1")));
+        List<SpecLine> lines = DataLines(Layout.Build(data));
+        SpecLine l2 = lines.Find(l => l.FirstOfRow && l.Row.Key == "d2");
+        Eq("-01", l2.Designation, "исполнение той же детали подряд — «-01»");
+        Eq("АБВГ.300000.001", l2.AbbrevPrefix, "смещение — на ширину базового обозначения");
+        SpecLine l4 = lines.Find(l => l.FirstOfRow && l.Row.Key == "d4");
+        Eq("ГОСТ 1050-89", l4.Designation, "обозначение со стандартом не сокращается");
+    }
+
+    static void LongRecord()
+    {
+        Execution e = Exec("АБВГ.100000.001");
+        StringBuilder name = new StringBuilder();
+        for (int i = 1; i <= 25; i++) name.Append(i == 1 ? "" : "$").Append("строка " + i);
+        SpecData data = Merge(Bom(e, Item("long", "АБВГ.400000.001", name.ToString(), Sections.Parts, "1")));
+        List<string> warnings = new List<string>();
+        List<SpecPage> pages = Layout.Build(data, warnings);
+        Check(pages.Count >= 2, "запись длиннее листа продолжается на следующем листе");
+        Eq(25, DataLines(pages).Count, "ни одна строка записи не потеряна");
+        foreach (SpecPage p in pages) Check(p.Lines.Count <= Layout.Capacity(p, data.Settings), "лист " + p.Number + " не переполнен");
+        Eq(1, warnings.Count, "предупреждение о разрыве записи");
+    }
+
+    static void Decades()
+    {
+        List<ExecutionBom> boms = new List<ExecutionBom>();
+        for (int i = 0; i <= 11; i++)
+        {
+            Execution e = Exec("АБВГ.100000.001" + (i == 0 ? "" : "-" + i.ToString("00")));
+            boms.Add(Bom(e, Item("p", "АБВГ.200000.001", "Деталь", Sections.Parts, "1")));
+        }
+        SpecData data = Merge(boms.ToArray());
+        data.Rows.Add(new SpecRow { Source = RowSource.Manual, Section = Sections.Other, Name = "Запись без количества" });
+        List<SpecPage> pages = Layout.Build(data);
+        Check(pages.Exists(p => p.Decade == 1), "второй десяток исполнений — на отдельных листах");
+        Check(DataLines(pages).Exists(l => l.Row != null && l.Row.Name == "Запись без количества"),
+              "строка без количества не пропадает при больше чем 10 исполнениях");
+    }
+
+    static void WrapMeasured()
+    {
+        SpecSettings s = new SpecSettings();
+        Func<string, double> measure = t => t.Length;   // 1 мм на символ
+        List<string> lines = Layout.Wrap("aaaa bbbb cccc", 12, s, measure);   // доступно 10 мм
+        Eq(2, lines.Count, "две строки");
+        Eq("aaaa bbbb", lines[0], "первая строка");
+        Eq("cccc", lines[1], "вторая строка");
+        lines = Layout.Wrap("abcdefghijklmn", 7, s, measure);   // доступно 5 мм — слово режется
+        Eq("abcde", lines[0], "длинное слово режется по ширине");
+    }
+}
