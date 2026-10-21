@@ -30,7 +30,6 @@ namespace GroupSpecB
     {
         const string DesignTracking = "Design Tracking Properties";
         const string Summary = "Inventor Summary Information";
-        const string DocSummary = "Inventor Document Summary Information";
         const string UserDefined = "Inventor User Defined Properties";
 
         public static string Prop(PropertySets sets, string setName, string propName)
@@ -661,18 +660,6 @@ namespace GroupSpecB
             if (string.IsNullOrEmpty(u)) return true;
             string s = u.Trim().ToLowerInvariant().TrimEnd('.');
             return s == "шт" || s == "each" || s == "ea" || s == "штука" || s == "штуки";
-        }
-
-        /// <summary>Заполняет пустые поля основной надписи из iProperties сборки.</summary>
-        public static void FillSettingsFromModel(Document asm, SpecSettings s)
-        {
-            PropertySets ps = asm.PropertySets;
-            if (string.IsNullOrEmpty(s.ProductName)) s.ProductName = NameOf(ps, s.NameProperty);
-            if (string.IsNullOrEmpty(s.Designer)) s.Designer = Prop(ps, DesignTracking, "Designer");
-            if (string.IsNullOrEmpty(s.Checker)) s.Checker = Prop(ps, DesignTracking, "Checked By");
-            if (string.IsNullOrEmpty(s.Approver)) s.Approver = Prop(ps, DesignTracking, "Engr Approved By");
-            if (string.IsNullOrEmpty(s.NormControl)) s.NormControl = Prop(ps, DesignTracking, "Mfg Approved By");
-            if (string.IsNullOrEmpty(s.Organization)) s.Organization = Prop(ps, DocSummary, "Company");
         }
     }
 }

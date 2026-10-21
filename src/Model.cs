@@ -144,9 +144,6 @@ namespace GroupSpecB
         [Browsable(false)]
         public string BaseDesignation { get; set; }
 
-        [Browsable(false)]
-        public string ProductName { get; set; }
-
         [Category("1. Спецификация"), DisplayName("Наименование берётся из"),
          Description("Description или Title (iProperties компонентов).")]
         public string NameProperty { get; set; }
@@ -162,13 +159,8 @@ namespace GroupSpecB
          Description("ГОСТ 2.113 п. 5.3: вторая и следующие подряд идущие части с тем же базовым обозначением пишутся как «-01».")]
         public bool AbbreviateExecutions { get; set; }
 
-        [Browsable(false)] public string Designer { get; set; }
-        [Browsable(false)] public string Checker { get; set; }
-        [Browsable(false)] public string TechControl { get; set; }
-        [Browsable(false)] public string NormControl { get; set; }
-        [Browsable(false)] public string Approver { get; set; }
-        [Browsable(false)] public string Organization { get; set; }
-        [Browsable(false)] public string Litera { get; set; }
+        // Дополнительные графы раньше хранились в параметрах; остались только для переноса старых данных
+        // чертежа (Commands.PrepareSettings). Графы основной надписи — свойства чертежа (TitleBlock.cs).
         [Browsable(false)] public string InvNo { get; set; }
         [Browsable(false)] public string FirstUse { get; set; }
         [Browsable(false)] public string RefNo { get; set; }
@@ -237,11 +229,10 @@ namespace GroupSpecB
             PosReserve = 2;
             RenumberAssemblyBom = true;
             FixSpeciaTransaction = true;
-            SpecDesignation = ""; BaseDesignation = ""; ProductName = "";
+            SpecDesignation = ""; BaseDesignation = "";
             DefDesignation = ""; DefName = ""; DefCompany = ""; DefDesigner = ""; DefChecker = "";
             DefTechControl = ""; DefNormControl = ""; DefApprover = ""; DefLitera = "";
-            Designer = ""; Checker = ""; TechControl = ""; NormControl = ""; Approver = "";
-            Organization = ""; Litera = ""; InvNo = ""; FirstUse = ""; RefNo = "";
+            InvNo = ""; FirstUse = ""; RefNo = "";
         }
     }
 

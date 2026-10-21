@@ -70,11 +70,7 @@ namespace GroupSpecB
             {
                 bool opened;
                 AssemblyDocument asm = BomCollector.OpenAssembly(App, AssemblyPath, out opened);
-                try
-                {
-                    defs = BomCollector.DiscoverFromAssembly(asm);
-                    BomCollector.FillSettingsFromModel((Document)asm, Data.Settings);
-                }
+                try { defs = BomCollector.DiscoverFromAssembly(asm); }
                 finally { if (opened) try { ((Document)asm).Close(true); } catch { } }
                 Data.SourcePath = AssemblyPath;
             }
@@ -95,18 +91,6 @@ namespace GroupSpecB
                 List<Execution> defs = DiscoverExecutions();
                 List<string> errors = new List<string>();
                 List<ExecutionBom> boms = BomCollector.CollectAll(App, defs, Data.Settings, progress, errors);
-                if (boms.Count > 0 && Drawing != null && string.IsNullOrEmpty(Data.Settings.ProductName))
-                {
-                    // наименование изделия — по модели основного исполнения
-                    bool opened;
-                    try
-                    {
-                        AssemblyDocument asm = BomCollector.OpenAssembly(App, boms[0].Execution.Path, out opened);
-                        BomCollector.FillSettingsFromModel((Document)asm, Data.Settings);
-                        if (opened) ((Document)asm).Close(true);
-                    }
-                    catch (Exception ex) { Log.Write("Наименование изделия из модели основного исполнения", ex); }
-                }
                 Data.SourceKind = defs.Count > 0 ? defs[0].Kind : "";
                 SpecLogic.Merge(Data, boms);
                 if (progress != null) progress("Прочитано исполнений: " + boms.Count);
