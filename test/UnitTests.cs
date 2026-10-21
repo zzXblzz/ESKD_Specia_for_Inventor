@@ -33,6 +33,7 @@ static class UnitTests
         Run("Запись длиннее листа", LongRecord);
         Run("Больше 10 исполнений", Decades);
         Run("Перенос по замеру текста", WrapMeasured);
+        Run("Свойства материала в чертеже", Material);
         Console.WriteLine("Пройдено: " + passed + ", ошибок: " + failed);
         return failed == 0 ? 0 : 1;
     }
@@ -194,5 +195,33 @@ static class UnitTests
         Eq("cccc", lines[1], "вторая строка");
         lines = Layout.Wrap("abcdefghijklmn", 7, s, measure);   // доступно 5 мм — слово режется
         Eq("abcde", lines[0], "длинное слово режется по ширине");
+    }
+
+    static void Material()
+    {
+        Dictionary<string, string> v = MaterialLogic.Values("Круг 20-h11\\Сталь 45-2-Т\\ГОСТ 1050-2013");
+        Eq("Круг 20-h11", v[MaterialLogic.Rolling], "сортамент");
+        Eq("Сталь 45-2-Т", v[MaterialLogic.UpLine], "над чертой");
+        Eq("ГОСТ 1050-2013", v[MaterialLogic.DownLine], "под чертой");
+        Eq(new string('_', 15), v[MaterialLogic.Line], "черта — длина большей строки + 1");
+        Eq("", v[MaterialLogic.Single], "составной материал — SingleMaterial пуст");
+
+        v = MaterialLogic.Values("Лист 2|Ст3|ГОСТ 16523-97");
+        Eq("Ст3", v[MaterialLogic.UpLine], "разделитель «|»");
+        Eq(new string('_', 14), v[MaterialLogic.Line], "черта по нижней строке");
+
+        v = MaterialLogic.Values("Сталь 12Х18Н10Т");
+        Eq("Сталь 12Х18Н10Т", v[MaterialLogic.Single], "простой материал — в SingleMaterial");
+        Eq("", v[MaterialLogic.Rolling] + v[MaterialLogic.UpLine] + v[MaterialLogic.DownLine] + v[MaterialLogic.Line], "дробь пуста");
+        Eq("A\\B", MaterialLogic.Values("A\\B")[MaterialLogic.Single], "две части — не дробь");
+
+        v = MaterialLogic.Values(null);
+        Eq(5, v.Count, "без детали — все пять свойств");
+        Check(new List<string>(v.Values).TrueForAll(s => s == ""), "без детали — все пусты");
+
+        Check(MaterialLogic.IsManual(" - "), "«-» — задано вручную");
+        Check(MaterialLogic.IsManual("См. чертёж"), "«см. …» — задано вручную");
+        Check(!MaterialLogic.IsManual("Сталь 45"), "материал — не вручную");
+        Check(!MaterialLogic.IsManual(""), "пусто — не вручную");
     }
 }

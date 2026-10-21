@@ -24,7 +24,7 @@ if ($LASTEXITCODE -ne 0) { throw "Ошибка компиляции надстр
 if ($LASTEXITCODE -ne 0) { throw "Ошибка компиляции TestRunner" }
 
 # проверки логики спецификации — без Inventor API
-$logic = @("Model.cs", "SpecLogic.cs", "Layout.cs", "Log.cs") | ForEach-Object { Join-Path "$root\src" $_ }
+$logic = @("Model.cs", "SpecLogic.cs", "Layout.cs", "Log.cs", "MaterialLogic.cs") | ForEach-Object { Join-Path "$root\src" $_ }
 & $csc /nologo /target:exe /platform:x64 /utf8output /codepage:65001 `
     "/out:$out\UnitTests.exe" /r:System.dll /r:System.Core.dll /r:System.Xml.dll @logic "$root\test\UnitTests.cs"
 if ($LASTEXITCODE -ne 0) { throw "Ошибка компиляции UnitTests" }
