@@ -189,13 +189,15 @@ namespace GroupSpecB
             return System.Text.RegularExpressions.Regex.Replace((s ?? "").Replace('$', ' '), @"\s+", " ").Trim().ToUpperInvariant();
         }
 
-        /// <summary>Ключ слияния: обозначение, а если его нет — наименование.</summary>
+        /// <summary>Ключ слияния: обозначение, а если его нет — наименование; плюс единица измерения, чтобы
+        /// не складывать количества в разных единицах (один материал в мм и в кг — две строки).</summary>
         static string MergeKey(BomItem it)
         {
+            string u = "|U:" + Norm(it.Unit);
             string d = Norm(it.Designation);
-            if (d != "") return "D:" + d;
+            if (d != "") return "D:" + d + u;
             string n = Norm(it.Name);
-            if (n != "") return "N:" + n;
+            if (n != "") return "N:" + n + u;
             return "K:" + it.Key;
         }
 
