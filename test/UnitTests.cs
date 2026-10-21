@@ -92,6 +92,9 @@ static class UnitTests
         Check(!SpecLogic.SplitExecution("ГОСТ 7798-70", out b, out n), "«ГОСТ 7798-70» — не исполнение");
         Check(!SpecLogic.SplitExecution("Болт М8х20 ГОСТ 7798-70", out b, out n), "наименование с ГОСТ — не исполнение");
         Check(!SpecLogic.SplitExecution("DIN 6921-8", out b, out n), "«DIN 6921-8» — не исполнение");
+        Eq("АБВГ.123456.789", SpecLogic.WithoutExecution("АБВГ.123456.789-01"), "обозначение фабрики без «-01»");
+        Eq("АБВГ.123456.789", SpecLogic.WithoutExecution("АБВГ.123456.789"), "основное исполнение не меняется");
+        Eq("DIN 6921-8", SpecLogic.WithoutExecution("DIN 6921-8"), "«DIN 6921-8» не меняется");
     }
 
     static void FormatQty()
