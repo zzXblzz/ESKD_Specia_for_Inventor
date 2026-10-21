@@ -196,6 +196,11 @@ namespace GroupSpecB
                      "Да — во все чертежи (если ассоциирование свойств в ESKD Specia отключено и надстройка его заменяет).")]
         public bool SyncTitleOnSaveAllDrawings { get; set; }
 
+        [Category("1. Спецификация"), DisplayName("Закрывать зависшую транзакцию ESKD Specia"),
+         Description("Временная заплатка: при открытии чертежа ESKD Specia может оставить открытой транзакцию «CreateProperty», " +
+                     "и обозреватель Inventor перестаёт обновляться. Да — надстройка прерывает её (если Specia загружена).")]
+        public bool FixSpeciaTransaction { get; set; }
+
         [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Обозначение"),
          Description("Подставляется, если свойство «Обозначение» пусто и в 3D-модели, и в чертеже.")]
         public string DefDesignation { get; set; }
@@ -231,6 +236,7 @@ namespace GroupSpecB
             ReserveLines = 0;
             PosReserve = 2;
             RenumberAssemblyBom = true;
+            FixSpeciaTransaction = true;
             SpecDesignation = ""; BaseDesignation = ""; ProductName = "";
             DefDesignation = ""; DefName = ""; DefCompany = ""; DefDesigner = ""; DefChecker = "";
             DefTechControl = ""; DefNormControl = ""; DefApprover = ""; DefLitera = "";
