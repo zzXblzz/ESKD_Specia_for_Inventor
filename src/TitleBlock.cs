@@ -98,6 +98,25 @@ namespace GroupSpecB
             catch { return ""; }
         }
 
+        /// <summary>Значение графы из 3D-модели. В фабрике iAssembly / iPart «Обозначение» — обозначение
+        /// активного члена (например, «…-01»), а в основной надписи нужно обозначение без номера исполнения.</summary>
+        static string ModelValue(Document model, TitleField f)
+        {
+            string v = Value(model, f);
+            return f == Designation && IsFactory(model) ? SpecLogic.WithoutExecution(v) : v;
+        }
+
+        static bool IsFactory(Document d)
+        {
+            try
+            {
+                if (d.DocumentType == DocumentTypeEnum.kAssemblyDocumentObject) return ((AssemblyDocument)d).ComponentDefinition.IsiAssemblyFactory;
+                if (d.DocumentType == DocumentTypeEnum.kPartDocumentObject) return ((PartDocument)d).ComponentDefinition.IsiPartFactory;
+            }
+            catch { }
+            return false;
+        }
+
         /// <summary>Записывает свойство (создаёт его и набор GOST Properties, если их нет).</summary>
         static void SetValue(Document d, TitleField f, string v)
         {
@@ -115,7 +134,7 @@ namespace GroupSpecB
             TitleState st = new TitleState();
             foreach (TitleField f in All)
             {
-                string mv = Value(model, f), dv = dwg != null ? Value((Document)dwg, f) : "";
+                string mv = ModelValue(model, f), dv = dwg != null ? Value((Document)dwg, f) : "";
                 if (mv != "") { st.Values[f.Key] = mv; st.Sources[f.Key] = TitleState.FromModel; }
                 else if (dv != "") { st.Values[f.Key] = dv; st.Sources[f.Key] = TitleState.FromDrawing; }
                 else { st.Values[f.Key] = s.GetTitleDefault(f.Key); st.Sources[f.Key] = TitleState.FromDefault; }
@@ -262,7 +281,7 @@ namespace GroupSpecB
                 Document d = (Document)dwg;
                 foreach (TitleField f in All)
                 {
-                    string mv = Value(p, f);
+                    string mv = ModelValue(p, f);
                     if (mv == "" || mv == Value(d, f)) continue;
                     try { SetValue(d, f, mv); } catch (Exception ex) { Log.Write("Свойство чертежа «" + f.Label + "» при сохранении", ex); }
                 }

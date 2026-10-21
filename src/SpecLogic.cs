@@ -29,6 +29,14 @@ namespace GroupSpecB
             return false;
         }
 
+        /// <summary>Обозначение без номера исполнения: «АБВГ.123456.789-01» → «АБВГ.123456.789»;
+        /// обозначение без номера исполнения ЕСКД возвращается как есть.</summary>
+        public static string WithoutExecution(string designation)
+        {
+            string b, n;
+            return SplitExecution(designation, out b, out n) ? b : (designation ?? "").Trim();
+        }
+
         static bool IsEskdBase(string b)
         {
             return b.IndexOf('.') > 0 && !Regex.IsMatch(b, @"\s");
