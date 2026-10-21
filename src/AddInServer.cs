@@ -98,15 +98,18 @@ namespace GroupSpecB
         }
 
         /// <summary>Перед сохранением чертежа: свойства основной надписи — из 3D-модели первого вида
-        /// (для члена iPart/iAssembly — из фабрики) в свойства чертежа.</summary>
+        /// (для члена iPart/iAssembly — из фабрики) в свойства чертежа. По умолчанию — только чертежи
+        /// с групповой спецификацией; для всех чертежей — параметр «Свойства при сохранении: все чертежи».</summary>
         void OnSaveDocument(_Document doc, EventTimingEnum timing, NameValueMap context, out HandlingCodeEnum handling)
         {
             handling = HandlingCodeEnum.kEventNotHandled;
             if (timing != EventTimingEnum.kBefore) return;
             try
             {
-                if (doc.DocumentType == DocumentTypeEnum.kDrawingDocumentObject)
-                    SpecTitleBlock.CopyFromFirstViewModel(app, (DrawingDocument)doc);
+                if (doc.DocumentType != DocumentTypeEnum.kDrawingDocumentObject) return;
+                DrawingDocument dwg = (DrawingDocument)doc;
+                if (DrawingWriter.HasData(dwg) || GlobalSettings.Load().SyncTitleOnSaveAllDrawings)
+                    SpecTitleBlock.CopyFromFirstViewModel(app, dwg);
             }
             catch { }   // сохранение не должно срываться из-за надстройки
         }
