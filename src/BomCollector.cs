@@ -5,32 +5,11 @@ using Inventor;
 
 namespace GroupSpecB
 {
-    /// <summary>Сведения о составной части, прочитанные из BOM одного исполнения.</summary>
-    public class BomItem
-    {
-        public string Key;
-        public string Designation;
-        public string Name;
-        public string Format;
-        public string Note;
-        public string Section;
-        public string Unit;
-        public string ItemNumber;
-        public string Qty;
-    }
-
-    public class ExecutionBom
-    {
-        public Execution Execution;
-        public List<BomItem> Items = new List<BomItem>();
-    }
-
     /// <summary>Чтение исполнений и их BOM из параметрической сборки.</summary>
     public static class BomCollector
     {
         const string DesignTracking = "Design Tracking Properties";
         const string Summary = "Inventor Summary Information";
-        const string DocSummary = "Inventor Document Summary Information";
         const string UserDefined = "Inventor User Defined Properties";
 
         public static string Prop(PropertySets sets, string setName, string propName)
@@ -283,7 +262,7 @@ namespace GroupSpecB
                 try { v = UserProp(f.PropertySets, SectionProp); }
                 finally { if (opened) try { f.Close(true); } catch { } }
             }
-            catch { }
+            catch (Exception ex) { Log.Write("spec_section фабрики", ex); }
             factorySectionCache[fp] = v;
             return v;
         }
@@ -478,7 +457,7 @@ namespace GroupSpecB
                     if (originalRow != null) { factory.DefaultRow = originalRow; asm.Update(); }
                     if (originalState != null) originalState.Activate();
                 }
-                catch { }
+                catch (Exception ex) { Log.Write("Возврат исходной строки iAssembly / состояния модели", ex); }
                 try { if (!wasDirty) asm.Dirty = false; } catch { }
             }
             return res;
@@ -614,9 +593,11 @@ namespace GroupSpecB
                 if (Array.IndexOf(Sections.Order, sec) < 0) sec = "";
                 if (sec == "")
                 {
-                    if (isContent || IsStandardByName(it.Name, it.Designation)) sec = Sections.Standard;
+                    // единица измерения проверяется первой: у материалов в наименовании почти всегда есть
+                    // ГОСТ («Лист Б-ПН-2 ГОСТ 19903-2015», м²), но это не стандартные изделия
+                    if (unit != "") sec = Sections.Materials;
+                    else if (isContent || IsStandardByName(it.Name, it.Designation)) sec = Sections.Standard;
                     else if (row.BOMStructure == BOMStructureEnum.kPurchasedBOMStructure) sec = Sections.Other;
-                    else if (unit != "") sec = Sections.Materials;
                     else if (isVirtual) sec = Sections.Other;
                     else if (isAsm) sec = Sections.Assemblies;
                     else sec = Sections.Parts;
@@ -659,18 +640,6 @@ namespace GroupSpecB
             if (string.IsNullOrEmpty(u)) return true;
             string s = u.Trim().ToLowerInvariant().TrimEnd('.');
             return s == "шт" || s == "each" || s == "ea" || s == "штука" || s == "штуки";
-        }
-
-        /// <summary>Заполняет пустые поля основной надписи из iProperties сборки.</summary>
-        public static void FillSettingsFromModel(Document asm, SpecSettings s)
-        {
-            PropertySets ps = asm.PropertySets;
-            if (string.IsNullOrEmpty(s.ProductName)) s.ProductName = NameOf(ps, s.NameProperty);
-            if (string.IsNullOrEmpty(s.Designer)) s.Designer = Prop(ps, DesignTracking, "Designer");
-            if (string.IsNullOrEmpty(s.Checker)) s.Checker = Prop(ps, DesignTracking, "Checked By");
-            if (string.IsNullOrEmpty(s.Approver)) s.Approver = Prop(ps, DesignTracking, "Engr Approved By");
-            if (string.IsNullOrEmpty(s.NormControl)) s.NormControl = Prop(ps, DesignTracking, "Mfg Approved By");
-            if (string.IsNullOrEmpty(s.Organization)) s.Organization = Prop(ps, DocSummary, "Company");
         }
     }
 }

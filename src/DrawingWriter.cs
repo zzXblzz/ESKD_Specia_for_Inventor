@@ -31,6 +31,9 @@ namespace GroupSpecB
         /// <summary>Удалять пустые листы (нужно только для чертежа, созданного надстройкой).</summary>
         public bool RemoveEmptySheets;
 
+        /// <summary>Предупреждения вёрстки после Write (например, запись длиннее листа).</summary>
+        public readonly List<string> Warnings = new List<string>();
+
         public DrawingWriter(Application app, DrawingDocument dwg, SpecData data)
         {
             this.app = app; this.dwg = dwg; this.data = data;
@@ -85,7 +88,7 @@ namespace GroupSpecB
         /// прочие листы чертежа (кроме пустого листа нового чертежа) не трогаются.</summary>
         public int Write(Action<string> progress)
         {
-            List<SpecPage> pages = Layout.Build(data);
+            Warnings.Clear();
             List<Sheet> old = new List<Sheet>();
             List<Sheet> emptyForeign = new List<Sheet>();
             foreach (Sheet sh in dwg.Sheets)
@@ -97,11 +100,14 @@ namespace GroupSpecB
                     emptyForeign.Add(sh);
             }
             EnsureStyles();
-            List<string> note = Layout.DecadeNote(pages);
+            // вёрстка строится, когда открыт эскиз первого листа: перенос текста считается по фактической
+            // ширине надписей шрифтом листа (MeasureMm), а не по средней ширине символа
+            List<SpecPage> pages = null;
+            List<string> note = null;
             Sheet firstNew = null;
-            for (int i = 0; i < pages.Count; i++)
+            for (int i = 0; pages == null || i < pages.Count; i++)
             {
-                if (progress != null) progress("Лист " + (i + 1) + " из " + pages.Count);
+                if (progress != null) progress("Лист " + (i + 1) + (pages != null ? " из " + pages.Count : ""));
                 Sheet sh = dwg.Sheets.Add(DrawingSheetSizeEnum.kA4DrawingSheetSize,
                     PageOrientationTypeEnum.kLandscapePageOrientation, SheetPrefix + "-" + (i + 1), Type.Missing, Type.Missing);
                 sh.AttributeSets.Add(SheetAttrSet);
@@ -118,6 +124,12 @@ namespace GroupSpecB
                 sk.DeferUpdates = true;
                 try
                 {
+                    if (pages == null)
+                    {
+                        double h = data.Settings.FontHeight;
+                        pages = Layout.Build(data, Warnings, text => MeasureMm(text, h));
+                        note = Layout.DecadeNote(pages);
+                    }
                     DrawPage(pages[i], pages.Count, i == 0 ? note : null);
                 }
                 finally
@@ -282,7 +294,7 @@ namespace GroupSpecB
                 tb.WidthScale = Math.Max(0.3, scale * availMm / w * 0.98);
                 tb.Origin = origin;
             }
-            catch { }
+            catch (Exception ex) { Log.Write("Сжатие надписи по ширине", ex); }
         }
 
         readonly Dictionary<string, double> widthCache = new Dictionary<string, double>();

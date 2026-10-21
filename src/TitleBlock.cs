@@ -222,20 +222,26 @@ namespace GroupSpecB
             catch { return model; }
         }
 
-        /// <summary>3D-модель родительского компонента для основной надписи: модель первого вида чертежа,
-        /// а если видов нет — основное (первое включённое) исполнение; член iPart/iAssembly → фабрика.</summary>
+        /// <summary>3D-модель родительского компонента для основной надписи: модель основного (первого включённого)
+        /// исполнения групповой спецификации, а если исполнений нет — модель первого вида чертежа;
+        /// член iPart/iAssembly → фабрика. Первый вид может показывать не основное исполнение (например, «-02»),
+        /// и тогда обозначение спецификации было бы обозначением этого исполнения.</summary>
         public static Document ParentModel(Application app, SpecData data, DrawingDocument dwg, out bool opened)
         {
             opened = false;
-            Document model = FirstViewModel(dwg);
-            bool modelOpened = false;
-            if (model == null && data != null)
+            if (data == null && dwg != null)
             {
-                List<Execution> ex = data.EnabledExecutions();
-                if (ex.Count == 0) return null;
-                try { model = (Document)BomCollector.OpenAssembly(app, ex[0].Path, out modelOpened); }
-                catch { return null; }
+                try { data = DrawingWriter.LoadData(dwg); } catch { data = null; }
             }
+            Document model = null;
+            bool modelOpened = false;
+            List<Execution> ex = data != null ? data.EnabledExecutions() : new List<Execution>();
+            if (ex.Count > 0)
+            {
+                try { model = (Document)BomCollector.OpenAssembly(app, ex[0].Path, out modelOpened); }
+                catch (Exception e) { Log.Write("ParentModel: " + ex[0].Path, e); model = null; }
+            }
+            if (model == null) { model = FirstViewModel(dwg); modelOpened = false; }
             if (model == null) return null;
             bool parentOpened;
             Document p = Parent(app, model, out parentOpened);
@@ -244,8 +250,8 @@ namespace GroupSpecB
             return p;
         }
 
-        /// <summary>При сохранении чертежа: свойства основной надписи копируются в чертёж из 3D-модели
-        /// первого вида (для члена iPart/iAssembly — из фабрики). Пустые в модели — не переносятся.</summary>
+        /// <summary>При сохранении чертежа: свойства основной надписи копируются в чертёж из родительского
+        /// компонента (см. ParentModel). Пустые в модели — не переносятся.</summary>
         public static void CopyFromFirstViewModel(Application app, DrawingDocument dwg)
         {
             bool opened;
@@ -258,7 +264,7 @@ namespace GroupSpecB
                 {
                     string mv = Value(p, f);
                     if (mv == "" || mv == Value(d, f)) continue;
-                    try { SetValue(d, f, mv); } catch { }
+                    try { SetValue(d, f, mv); } catch (Exception ex) { Log.Write("Свойство чертежа «" + f.Label + "» при сохранении", ex); }
                 }
             }
             finally { if (opened) try { p.Close(true); } catch { } }

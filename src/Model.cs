@@ -36,6 +36,14 @@ namespace GroupSpecB
             return section == Documentation || section == Assemblies || section == Parts;
         }
 
+        /// <summary>Разделы с обозначениями ЕСКД, где действуют исполнения: группировка исполнений одной части
+        /// и сокращение «-02» (ГОСТ 2.113 п. 5.3). В стандартных и прочих изделиях, материалах «-70» в
+        /// «ГОСТ 7798-70» — год стандарта, а не номер исполнения.</summary>
+        public static bool HasExecutions(string section)
+        {
+            return section == Complexes || section == Assemblies || section == Parts || section == Kits;
+        }
+
         /// <summary>Разделы, в которых составные части сортируются по наименованию, а не по обозначению.</summary>
         public static bool SortByName(string section)
         {
@@ -61,6 +69,26 @@ namespace GroupSpecB
         public string Path = "";    // файл фабрики / модели исполнения (для File — полное имя документа)
         public string Member = "";  // имя строки iAssembly или состояния модели
         public bool UserAdded;      // исполнение добавлено кнопкой «Добавить исполнение»
+    }
+
+    /// <summary>Сведения о составной части, прочитанные из BOM одного исполнения (заполняет BomCollector).</summary>
+    public class BomItem
+    {
+        public string Key;
+        public string Designation;
+        public string Name;
+        public string Format;
+        public string Note;
+        public string Section;
+        public string Unit;
+        public string ItemNumber;
+        public string Qty;
+    }
+
+    public class ExecutionBom
+    {
+        public Execution Execution;
+        public List<BomItem> Items = new List<BomItem>();
     }
 
     public class QtyEntry
@@ -136,9 +164,6 @@ namespace GroupSpecB
         [Browsable(false)]
         public string BaseDesignation { get; set; }
 
-        [Browsable(false)]
-        public string ProductName { get; set; }
-
         [Category("1. Спецификация"), DisplayName("Наименование берётся из"),
          Description("Description или Title (iProperties компонентов).")]
         public string NameProperty { get; set; }
@@ -154,13 +179,8 @@ namespace GroupSpecB
          Description("ГОСТ 2.113 п. 5.3: вторая и следующие подряд идущие части с тем же базовым обозначением пишутся как «-01».")]
         public bool AbbreviateExecutions { get; set; }
 
-        [Browsable(false)] public string Designer { get; set; }
-        [Browsable(false)] public string Checker { get; set; }
-        [Browsable(false)] public string TechControl { get; set; }
-        [Browsable(false)] public string NormControl { get; set; }
-        [Browsable(false)] public string Approver { get; set; }
-        [Browsable(false)] public string Organization { get; set; }
-        [Browsable(false)] public string Litera { get; set; }
+        // Дополнительные графы раньше хранились в параметрах; остались только для переноса старых данных
+        // чертежа (Commands.PrepareSettings). Графы основной надписи — свойства чертежа (TitleBlock.cs).
         [Browsable(false)] public string InvNo { get; set; }
         [Browsable(false)] public string FirstUse { get; set; }
         [Browsable(false)] public string RefNo { get; set; }
@@ -171,7 +191,7 @@ namespace GroupSpecB
         [Category("3. Вёрстка"), DisplayName("Шрифт")] public string FontName { get; set; }
         [Category("3. Вёрстка"), DisplayName("Наклонный шрифт")] public bool Italic { get; set; }
         [Category("3. Вёрстка"), DisplayName("Средняя ширина символа, мм"),
-         Description("Используется для переноса текста по строкам.")]
+         Description("Оценка ширины текста для предпросмотра в редакторе. При формировании листов перенос считается по фактической ширине надписей.")]
         public double CharWidth { get; set; }
         [Category("3. Вёрстка"), DisplayName("Свободных строк после раздела")] public int ReserveLines { get; set; }
 
@@ -182,6 +202,16 @@ namespace GroupSpecB
         [Category("1. Спецификация"), DisplayName("Перенумеровать позиции в сборке"),
          Description("При формировании записать номера позиций спецификации в BOM родительских сборок исполнений (структурированный вид, номера блокируются). Фабрика iAssembly сохраняется, её члены пересоздаются.")]
         public bool RenumberAssemblyBom { get; set; }
+
+        [Category("1. Спецификация"), DisplayName("Свойства при сохранении: все чертежи"),
+         Description("Нет — при сохранении свойства основной надписи копируются из 3D-модели только в чертежи с групповой спецификацией. " +
+                     "Да — во все чертежи (если ассоциирование свойств в ESKD Specia отключено и надстройка его заменяет).")]
+        public bool SyncTitleOnSaveAllDrawings { get; set; }
+
+        [Category("1. Спецификация"), DisplayName("Закрывать зависшую транзакцию ESKD Specia"),
+         Description("Временная заплатка: при открытии чертежа ESKD Specia может оставить открытой транзакцию «CreateProperty», " +
+                     "и обозреватель Inventor перестаёт обновляться. Да — надстройка прерывает её (если Specia загружена).")]
+        public bool FixSpeciaTransaction { get; set; }
 
         [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Обозначение"),
          Description("Подставляется, если свойство «Обозначение» пусто и в 3D-модели, и в чертеже.")]
@@ -218,11 +248,11 @@ namespace GroupSpecB
             ReserveLines = 0;
             PosReserve = 2;
             RenumberAssemblyBom = true;
-            SpecDesignation = ""; BaseDesignation = ""; ProductName = "";
+            FixSpeciaTransaction = true;
+            SpecDesignation = ""; BaseDesignation = "";
             DefDesignation = ""; DefName = ""; DefCompany = ""; DefDesigner = ""; DefChecker = "";
             DefTechControl = ""; DefNormControl = ""; DefApprover = ""; DefLitera = "";
-            Designer = ""; Checker = ""; TechControl = ""; NormControl = ""; Approver = "";
-            Organization = ""; Litera = ""; InvNo = ""; FirstUse = ""; RefNo = "";
+            InvNo = ""; FirstUse = ""; RefNo = "";
         }
     }
 
@@ -289,7 +319,7 @@ namespace GroupSpecB
                     using (StreamReader r = new StreamReader(FilePath))
                         return (SpecSettings)new XmlSerializer(typeof(SpecSettings)).Deserialize(r);
             }
-            catch { }
+            catch (Exception ex) { Log.Write("Чтение Settings.xml", ex); }
             return new SpecSettings();
         }
 
@@ -301,7 +331,7 @@ namespace GroupSpecB
                 using (StreamWriter w = new StreamWriter(FilePath))
                     new XmlSerializer(typeof(SpecSettings)).Serialize(w, s);
             }
-            catch { }
+            catch (Exception ex) { Log.Write("Запись Settings.xml", ex); }
         }
     }
 }

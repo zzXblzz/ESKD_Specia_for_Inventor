@@ -42,8 +42,12 @@ namespace GroupSpecB
         // iAssembly/iPart добавление падает, транзакция остаётся открытой, и обозреватель Inventor
         // перестаёт обновляться во всех документах. Прерываем её после того, как отработают все
         // обработчики активации (порядок вызова надстроек не определён — поэтому таймер).
+        // Проверка идёт несколько тактов (Specia может отработать позже), только если Specia загружена и
+        // параметр «Закрывать зависшую транзакцию ESKD Specia» включён; каждое прерывание пишется в журнал.
         const string SpeciaDanglingTx = "CreateProperty";
+        const int TxTicks = 5;   // 5 × 200 мс
         Timer txTimer;
+        int txTicksLeft;
 
         void OnActivateDocument(_Document doc, EventTimingEnum timing, NameValueMap context, out HandlingCodeEnum handling)
         {
@@ -52,15 +56,17 @@ namespace GroupSpecB
             try
             {
                 if (doc.DocumentType != DocumentTypeEnum.kDrawingDocumentObject) return;
+                if (!GlobalSettings.Load().FixSpeciaTransaction || !SpeciaLoaded()) return;
                 txTimer.Stop();
+                txTicksLeft = TxTicks;
                 txTimer.Start();
             }
-            catch { }
+            catch (Exception ex) { Log.Write("Активация чертежа", ex); }
         }
 
         void OnTxTimer(object sender, EventArgs e)
         {
-            txTimer.Stop();
+            if (--txTicksLeft <= 0) txTimer.Stop();
             try
             {
                 TransactionManager tm = app.TransactionManager;
@@ -69,9 +75,31 @@ namespace GroupSpecB
                     Transaction t = tm.CurrentTransaction;
                     if (t == null || t.DisplayName != SpeciaDanglingTx) break;
                     t.Abort();   // End() на такой транзакции ничего не делает
+                    Log.Write("Прервана незакрытая транзакция ESKD Specia «" + SpeciaDanglingTx + "»");
+                    txTimer.Stop();
                 }
             }
-            catch { }
+            catch (Exception ex) { Log.Write("Заплатка Specia", ex); }
+        }
+
+        bool? speciaLoaded;
+
+        /// <summary>Загружена ли надстройка ESKD Specia (по отображаемому имени; результат запоминается).</summary>
+        bool SpeciaLoaded()
+        {
+            if (speciaLoaded.HasValue && speciaLoaded.Value) return true;
+            bool found = false;
+            try
+            {
+                foreach (ApplicationAddIn a in app.ApplicationAddIns)
+                {
+                    string n = a.DisplayName ?? "";
+                    if (a.Activated && n.IndexOf("Specia", StringComparison.OrdinalIgnoreCase) >= 0) { found = true; break; }
+                }
+            }
+            catch (Exception ex) { Log.Write("Поиск ESKD Specia", ex); found = true; }   // не смогли проверить — работаем как раньше
+            speciaLoaded = found;
+            return found;
         }
 
         void AddToRibbons()
@@ -93,22 +121,25 @@ namespace GroupSpecB
                     foreach (CommandControl c in panel.CommandControls) if (c.InternalName == button.InternalName) has = true;
                     if (!has) panel.CommandControls.AddButton(button, true, true, "", false);
                 }
-                catch { }
+                catch (Exception ex) { Log.Write("Кнопка на ленте", ex); }
             }
         }
 
         /// <summary>Перед сохранением чертежа: свойства основной надписи — из 3D-модели первого вида
-        /// (для члена iPart/iAssembly — из фабрики) в свойства чертежа.</summary>
+        /// (для члена iPart/iAssembly — из фабрики) в свойства чертежа. По умолчанию — только чертежи
+        /// с групповой спецификацией; для всех чертежей — параметр «Свойства при сохранении: все чертежи».</summary>
         void OnSaveDocument(_Document doc, EventTimingEnum timing, NameValueMap context, out HandlingCodeEnum handling)
         {
             handling = HandlingCodeEnum.kEventNotHandled;
             if (timing != EventTimingEnum.kBefore) return;
             try
             {
-                if (doc.DocumentType == DocumentTypeEnum.kDrawingDocumentObject)
-                    SpecTitleBlock.CopyFromFirstViewModel(app, (DrawingDocument)doc);
+                if (doc.DocumentType != DocumentTypeEnum.kDrawingDocumentObject) return;
+                DrawingDocument dwg = (DrawingDocument)doc;
+                if (DrawingWriter.HasData(dwg) || GlobalSettings.Load().SyncTitleOnSaveAllDrawings)
+                    SpecTitleBlock.CopyFromFirstViewModel(app, dwg);
             }
-            catch { }   // сохранение не должно срываться из-за надстройки
+            catch (Exception ex) { Log.Write("Свойства основной надписи при сохранении", ex); }   // сохранение не должно срываться из-за надстройки
         }
 
         void OnExecute(NameValueMap context)
@@ -116,6 +147,7 @@ namespace GroupSpecB
             try { Commands.Run(app); }
             catch (Exception ex)
             {
+                Log.Write("Команда «Групповая спецификация»", ex);
                 MessageBox.Show(ex.Message + "\r\n\r\n" + ex.StackTrace, "Групповая спецификация", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }

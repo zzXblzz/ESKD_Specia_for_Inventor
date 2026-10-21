@@ -1,6 +1,7 @@
 ﻿# Сборка надстройки GroupSpecB встроенным компилятором .NET Framework 4.8 (Visual Studio не нужна).
-# Использование:  powershell -ExecutionPolicy Bypass -File build.ps1 [-Install] [-InventorVersion 2026]
-param([switch]$Install, [string]$InventorVersion = "2026", [string]$OutDir = "")
+# Использование:  powershell -ExecutionPolicy Bypass -File build.ps1 [-Install] [-Test] [-InventorVersion 2026]
+#   -Test — собрать и запустить проверки логики без Inventor (test\UnitTests.cs)
+param([switch]$Install, [switch]$Test, [string]$InventorVersion = "2026", [string]$OutDir = "")
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
@@ -22,7 +23,17 @@ if ($LASTEXITCODE -ne 0) { throw "Ошибка компиляции надстр
     "/out:$out\TestRunner.exe" "/r:$out\GroupSpecB.dll" @refs "$root\test\TestRunner.cs"
 if ($LASTEXITCODE -ne 0) { throw "Ошибка компиляции TestRunner" }
 
-# .addin с абсолютным путём к DLL
+# проверки логики спецификации — без Inventor API
+$logic = @("Model.cs", "SpecLogic.cs", "Layout.cs", "Log.cs") | ForEach-Object { Join-Path "$root\src" $_ }
+& $csc /nologo /target:exe /platform:x64 /utf8output /codepage:65001 `
+    "/out:$out\UnitTests.exe" /r:System.dll /r:System.Core.dll /r:System.Xml.dll @logic "$root\test\UnitTests.cs"
+if ($LASTEXITCODE -ne 0) { throw "Ошибка компиляции UnitTests" }
+if ($Test) {
+    & "$out\UnitTests.exe"
+    if ($LASTEXITCODE -ne 0) { throw "Проверки логики не пройдены" }
+}
+
+# .addin с абсолютным путём к DLL (в исходном GroupSpecB.addin путь относительный)
 $addin = Get-Content "$root\GroupSpecB.addin" -Raw -Encoding UTF8
 $addin = $addin -replace '<Assembly>.*</Assembly>', "<Assembly>$out\GroupSpecB.dll</Assembly>"
 [IO.File]::WriteAllText("$out\GroupSpecB.addin", $addin, (New-Object Text.UTF8Encoding $true))

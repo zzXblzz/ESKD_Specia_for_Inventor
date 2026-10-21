@@ -70,11 +70,7 @@ namespace GroupSpecB
             {
                 bool opened;
                 AssemblyDocument asm = BomCollector.OpenAssembly(App, AssemblyPath, out opened);
-                try
-                {
-                    defs = BomCollector.DiscoverFromAssembly(asm);
-                    BomCollector.FillSettingsFromModel((Document)asm, Data.Settings);
-                }
+                try { defs = BomCollector.DiscoverFromAssembly(asm); }
                 finally { if (opened) try { ((Document)asm).Close(true); } catch { } }
                 Data.SourcePath = AssemblyPath;
             }
@@ -95,18 +91,6 @@ namespace GroupSpecB
                 List<Execution> defs = DiscoverExecutions();
                 List<string> errors = new List<string>();
                 List<ExecutionBom> boms = BomCollector.CollectAll(App, defs, Data.Settings, progress, errors);
-                if (boms.Count > 0 && Drawing != null && string.IsNullOrEmpty(Data.Settings.ProductName))
-                {
-                    // наименование изделия — по модели основного исполнения
-                    bool opened;
-                    try
-                    {
-                        AssemblyDocument asm = BomCollector.OpenAssembly(App, boms[0].Execution.Path, out opened);
-                        BomCollector.FillSettingsFromModel((Document)asm, Data.Settings);
-                        if (opened) ((Document)asm).Close(true);
-                    }
-                    catch { }
-                }
                 Data.SourceKind = defs.Count > 0 ? defs[0].Kind : "";
                 SpecLogic.Merge(Data, boms);
                 if (progress != null) progress("Прочитано исполнений: " + boms.Count);
@@ -117,7 +101,7 @@ namespace GroupSpecB
                 bool warn = errors.Count > 0 || dup.Count > 0 || boms.Count == 0;
                 return warn ? string.Join("\r\n\r\n", msg) : null;
             }
-            catch (Exception ex) { return "Ошибка чтения BOM: " + ex.Message; }
+            catch (Exception ex) { Log.Write("Чтение BOM", ex); return "Ошибка чтения BOM: " + ex.Message; }
         }
     }
 
@@ -235,12 +219,15 @@ namespace GroupSpecB
                 finally { if (mOpened && model != null) try { model.Close(true); } catch { } }
             }
             catch (Exception ex) { titleReport = "Основная надпись: " + ex.Message; }
+            List<string> layoutWarnings = new List<string>();
             bool screen = app.ScreenUpdating;
             Transaction tr = app.TransactionManager.StartTransaction((_Document)dwg, "Групповая спецификация");
             try
             {
                 app.ScreenUpdating = false;
-                int n = new DrawingWriter(app, dwg, data) { RemoveEmptySheets = created }.Write(s => { try { app.StatusBarText = s; } catch { } });
+                DrawingWriter writer = new DrawingWriter(app, dwg, data) { RemoveEmptySheets = created };
+                int n = writer.Write(s => { try { app.StatusBarText = s; } catch { } });
+                layoutWarnings.AddRange(writer.Warnings);
                 tr.End();
                 app.StatusBarText = "Групповая спецификация: листов — " + n;
             }
@@ -255,6 +242,7 @@ namespace GroupSpecB
             if (sectionReport != null && (sectionReport.Contains("Не записано") || sectionReport.Contains("ошибка"))) reports.Add(sectionReport);
             if (bomReport != null && bomReport.Contains("\r\n") || bomReport != null && bomReport.Contains("ошибка")) reports.Add(bomReport);
             if (titleReport != null) reports.Add(titleReport);
+            if (layoutWarnings.Count > 0) reports.Add(string.Join("\r\n", layoutWarnings));
             if (reports.Count > 0)
                 MessageBox.Show(owner, string.Join("\r\n\r\n", reports), Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
             else if (bomReport != null) try { app.StatusBarText = bomReport; } catch { }

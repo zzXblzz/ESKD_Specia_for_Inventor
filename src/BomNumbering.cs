@@ -29,19 +29,22 @@ namespace GroupSpecB
             }
             List<string> notes = new List<string>();
             List<Target> targets = CollectTargets(app, data, notes);
-            int changedRows = 0, docs = 0;
+            int changedRows = 0, docs = 0, unchanged = 0;
             foreach (Target t in targets)
             {
                 if (progress != null) progress("Перенумерация BOM: " + System.IO.Path.GetFileName(t.Path));
                 try
                 {
-                    int n = RenumberTarget(app, t, posByKey, notes);
+                    bool changed;
+                    int n = RenumberTarget(app, t, posByKey, notes, out changed);
                     changedRows += n;
-                    docs++;
+                    if (changed) docs++; else unchanged++;
                 }
                 catch (Exception ex) { notes.Add(System.IO.Path.GetFileName(t.Path) + ": " + ex.Message); }
             }
-            string rep = "Позиции BOM: перенумеровано сборок — " + docs + ", строк BOM с номером из спецификации — " + changedRows + ".";
+            string rep = "Позиции BOM: перенумеровано сборок — " + docs +
+                         (unchanged > 0 ? ", уже совпадали — " + unchanged : "") +
+                         ", строк BOM с номером из спецификации — " + changedRows + ".";
             if (notes.Count > 0) rep += "\r\n" + string.Join("\r\n", notes);
             return rep;
         }
@@ -104,8 +107,9 @@ namespace GroupSpecB
             return order;
         }
 
-        static int RenumberTarget(Application app, Target t, Dictionary<string, string> posByKey, List<string> notes)
+        static int RenumberTarget(Application app, Target t, Dictionary<string, string> posByKey, List<string> notes, out bool changed)
         {
+            changed = false;
             bool opened;
             AssemblyDocument asm = BomCollector.OpenAssembly(app, t.Path, out opened);
             int numbered = 0;
@@ -116,20 +120,21 @@ namespace GroupSpecB
                 bool wasDirty = doc.Dirty;
                 AssemblyComponentDefinition cd = asm.ComponentDefinition;
                 BOM bom = cd.BOM;
-                if (!bom.StructuredViewEnabled) bom.StructuredViewEnabled = true;
+                if (!bom.StructuredViewEnabled) { bom.StructuredViewEnabled = true; changed = true; }
 
                 ModelStates ms = null;
                 ModelState activeState = null;
+                bool scopeSet = false;
+                MemberEditScopeEnum oldScope = MemberEditScopeEnum.kEditActiveMember;
                 if (t.States.Count > 0)
                 {
                     ms = cd.ModelStates;
                     activeState = ms.ActiveModelState;
-                    try { ms.MemberEditScope = MemberEditScopeEnum.kEditAllMembers; } catch { }
+                    try { oldScope = ms.MemberEditScope; ms.MemberEditScope = MemberEditScopeEnum.kEditAllMembers; scopeSet = true; } catch { }
                 }
                 Transaction tr = app.TransactionManager.StartTransaction((_Document)asm, "Позиции по групповой спецификации");
                 try
                 {
-                    Dictionary<string, string> assigned = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                     if (t.States.Count > 0)
                     {
                         foreach (string s in t.States)
@@ -137,18 +142,33 @@ namespace GroupSpecB
                             BomCollector.ReleaseBomReferences();
                             ms[s].Activate();
                             asm.Update();
-                            numbered = Math.Max(numbered, NumberView(bom, posByKey, assigned, notes, System.IO.Path.GetFileName(t.Path) + " <" + s + ">"));
+                            bool c;
+                            numbered = Math.Max(numbered, NumberView(bom, posByKey, notes, System.IO.Path.GetFileName(t.Path) + " <" + s + ">", out c));
+                            changed |= c;
                         }
                     }
-                    else numbered = NumberView(bom, posByKey, assigned, notes, System.IO.Path.GetFileName(t.Path));
+                    else
+                    {
+                        bool c;
+                        numbered = NumberView(bom, posByKey, notes, System.IO.Path.GetFileName(t.Path), out c);
+                        changed |= c;
+                    }
                     tr.End();
                 }
                 catch { tr.Abort(); throw; }
                 finally
                 {
                     if (activeState != null) try { BomCollector.ReleaseBomReferences(); activeState.Activate(); } catch { }
+                    // область правки состояний модели — как была у пользователя
+                    if (scopeSet) try { ms.MemberEditScope = oldScope; } catch { }
                 }
 
+                if (!changed)
+                {
+                    // номера уже совпадают со спецификацией: не сохраняем сборку и не пересоздаём члены iAssembly
+                    try { if (!wasDirty) doc.Dirty = false; } catch { }
+                    return numbered;
+                }
                 if (wasDirty)
                 {
                     notes.Add(System.IO.Path.GetFileName(t.Path) + ": в сборке были несохранённые изменения — номера записаны, сохраните её сами.");
@@ -177,17 +197,19 @@ namespace GroupSpecB
         }
 
         /// <summary>Номера строк структурированного BOM: строкам из спецификации — их позиция (с блокировкой),
-        /// остальным — следующие свободные номера после наибольшего. Два прохода, чтобы не было
-        /// конфликтов номеров при перестановке.</summary>
-        static int NumberView(BOM bom, Dictionary<string, string> posByKey, Dictionary<string, string> assigned,
-                              List<string> notes, string where)
+        /// остальным — следующие свободные номера после наибольшего. Сначала номера рассчитываются; если они
+        /// уже стоят (и заблокированы), BOM не меняется (changed = false). Иначе запись в два прохода, чтобы
+        /// не было конфликтов номеров при перестановке.</summary>
+        static int NumberView(BOM bom, Dictionary<string, string> posByKey, List<string> notes, string where, out bool changed)
         {
+            changed = false;
             BOMView view = null;
             foreach (BOMView v in bom.BOMViews) if (v.ViewType == BOMViewTypeEnum.kStructuredBOMViewType) view = v;
             if (view == null) throw new Exception("нет структурированного вида BOM");
 
             List<BOMRow> rows = new List<BOMRow>();
             List<string> desired = new List<string>();
+            HashSet<string> taken = new HashSet<string>();
             int max = 0;
             foreach (BOMRow r in view.BOMRows)
             {
@@ -195,10 +217,31 @@ namespace GroupSpecB
                 string key = BomCollector.RowKey(r);
                 string pos = null;
                 if (key != null) posByKey.TryGetValue(key, out pos);
+                if (pos != null && !taken.Add(pos))
+                {
+                    // тот же компонент в двух строках BOM — второй строке номер не достанется
+                    notes.Add(where + ": номер " + pos + " не назначен второй строке BOM того же компонента");
+                    pos = null;
+                }
                 desired.Add(pos);
                 int p;
                 if (pos != null && int.TryParse(pos, out p)) max = Math.Max(max, p);
             }
+            // окончательные номера: из спецификации, остальным — следующие свободные
+            List<string> plan = new List<string>();
+            int next = max, count = 0;
+            for (int i = 0; i < rows.Count; i++)
+            {
+                if (desired[i] != null) { plan.Add(desired[i]); count++; }
+                else { next++; plan.Add(next.ToString()); }
+            }
+            for (int i = 0; i < rows.Count && !changed; i++)
+            {
+                if (rows[i].ItemNumber != plan[i]) changed = true;
+                else if (desired[i] != null) { try { if (!rows[i].ItemNumberLocked) changed = true; } catch { } }
+            }
+            if (!changed) return count;
+
             // проход 1: снять блокировку и развести номера во временный диапазон
             for (int i = 0; i < rows.Count; i++)
             {
@@ -206,31 +249,17 @@ namespace GroupSpecB
                 rows[i].ItemNumber = "~" + (i + 1);
             }
             // проход 2: окончательные номера
-            int next = max, count = 0;
             for (int i = 0; i < rows.Count; i++)
             {
-                string pos = desired[i];
-                if (pos != null)
+                try
                 {
-                    try
-                    {
-                        rows[i].ItemNumber = pos;
-                        try { rows[i].ItemNumberLocked = true; } catch { }
-                        count++;
-                        continue;
-                    }
-                    catch
-                    {
-                        // тот же компонент в двух строках BOM — второй строке номер не достанется
-                        notes.Add(where + ": номер " + pos + " не назначен второй строке BOM того же компонента");
-                    }
-                    next++;
-                    rows[i].ItemNumber = next.ToString();
+                    rows[i].ItemNumber = plan[i];
+                    if (desired[i] != null) try { rows[i].ItemNumberLocked = true; } catch { }
                 }
-                else
+                catch (Exception ex)
                 {
-                    next++;
-                    rows[i].ItemNumber = next.ToString();
+                    notes.Add(where + ": строке BOM не назначен номер " + plan[i] + " (" + ex.Message + ")");
+                    Log.Write(where + ": номер " + plan[i], ex);
                 }
             }
             return count;

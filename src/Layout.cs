@@ -36,8 +36,10 @@ namespace GroupSpecB
         /// <summary>Разбивка текста графы на строки.
         /// Если в тексте есть «$» (или перевод строки) — это границы строк, задаваемые пользователем:
         /// каждая часть пишется отдельной строкой без переноса, а не влезающая по ширине — сжимается
-        /// при выводе на чертёж. Без «$» текст переносится по словам по ширине графы.</summary>
-        public static List<string> Wrap(string text, double widthMm, SpecSettings s)
+        /// при выводе на чертёж. Без «$» текст переносится по словам по ширине графы.
+        /// measure — ширина надписи на чертеже, мм (замер шрифтом листа); без него ширина оценивается
+        /// по средней ширине символа (параметр «Средняя ширина символа»).</summary>
+        public static List<string> Wrap(string text, double widthMm, SpecSettings s, Func<string, double> measure = null)
         {
             string src = (text ?? "").Replace("\r\n", "\n");
             if (HasManualBreaks(src))
@@ -45,6 +47,11 @@ namespace GroupSpecB
                 List<string> parts = new List<string>();
                 foreach (string p in src.Split('$', '\n')) parts.Add(p.Trim());
                 return parts;
+            }
+            if (measure != null)
+            {
+                try { return WrapMeasured(src, widthMm - 2.0, measure); }
+                catch (Exception ex) { Log.Write("Перенос по замеру текста", ex); }   // — по средней ширине символа
             }
             int max = Math.Max(4, (int)Math.Floor((widthMm - 2.0) / Math.Max(0.5, s.CharWidth)));
             List<string> lines = new List<string>();
@@ -67,15 +74,41 @@ namespace GroupSpecB
             return lines;
         }
 
+        /// <summary>Перенос по словам по фактической ширине текста: в строку добавляется слово, пока ширина
+        /// строки не превысит avail. Слово шире графы режется по символам.</summary>
+        static List<string> WrapMeasured(string src, double avail, Func<string, double> measure)
+        {
+            List<string> lines = new List<string>();
+            string cur = "";
+            foreach (string w0 in src.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string w = w0;
+                string cand = cur == "" ? w : cur + " " + w;
+                if (measure(cand) <= avail) { cur = cand; continue; }
+                if (cur != "") { lines.Add(cur); cur = ""; }
+                while (measure(w) > avail && w.Length > 1)
+                {
+                    int n = w.Length - 1;
+                    while (n > 1 && measure(w.Substring(0, n)) > avail) n--;
+                    lines.Add(w.Substring(0, n));
+                    w = w.Substring(n);
+                }
+                cur = w;
+            }
+            if (cur != "") lines.Add(cur);
+            if (lines.Count == 0) lines.Add("");
+            return lines;
+        }
+
         public static bool HasManualBreaks(string text)
         {
             return text != null && (text.IndexOf('$') >= 0 || text.IndexOf('\n') >= 0);
         }
-        static List<SpecLine> RowLines(SpecRow r, List<Execution> execs, SpecSettings s)
+        static List<SpecLine> RowLines(SpecRow r, List<Execution> execs, SpecSettings s, Func<string, double> measure)
         {
-            List<string> des = Wrap(r.Designation, WDesignation, s);
-            List<string> name = Wrap(r.Name, WName, s);
-            List<string> note = Wrap(r.Note, WNote, s);
+            List<string> des = Wrap(r.Designation, WDesignation, s, measure);
+            List<string> name = Wrap(r.Name, WName, s, measure);
+            List<string> note = Wrap(r.Note, WNote, s, measure);
             int n = Math.Max(des.Count, Math.Max(name.Count, note.Count));
             List<SpecLine> res = new List<SpecLine>();
             for (int i = 0; i < n; i++)
@@ -111,8 +144,9 @@ namespace GroupSpecB
         static SpecLine Blank() { return new SpecLine { Kind = LineKind.Blank }; }
 
         /// <summary>Строит листы спецификации. При числе исполнений больше десяти запись повторяется
-        /// для каждого следующего десятка (ГОСТ 2.113 п. 5.5.2 е, ж).</summary>
-        public static List<SpecPage> Build(SpecData data)
+        /// для каждого следующего десятка (ГОСТ 2.113 п. 5.5.2 е, ж). Запись, которая длиннее целого листа,
+        /// разрывается между листами (иначе её конец потерялся бы); об этом — строка в warnings.</summary>
+        public static List<SpecPage> Build(SpecData data, List<string> warnings = null, Func<string, double> measure = null)
         {
             SpecSettings s = data.Settings;
             List<Execution> all = data.EnabledExecutions();
@@ -128,8 +162,10 @@ namespace GroupSpecB
                 List<List<SpecLine>> blocks = new List<List<SpecLine>>();
                 foreach (string section in Sections.Order)
                 {
+                    // строка без количества ни в одном исполнении (документ, свободная запись) — на листах
+                    // первого десятка, иначе при больше чем 10 исполнениях она пропала бы со всех листов
                     List<SpecRow> rows = data.Rows.FindAll(r => r.Section == section && !r.Hidden &&
-                        (decades.Count == 1 || RowUsedIn(r, execs)));
+                        (decades.Count == 1 || RowUsedIn(r, execs) || d == 0 && !RowUsedIn(r, all)));
                     if (rows.Count == 0) continue;
                     bool firstInSection = true;
                     foreach (SpecRow r in rows)
@@ -142,7 +178,7 @@ namespace GroupSpecB
                             block.Add(Blank());
                             firstInSection = false;
                         }
-                        block.AddRange(RowLines(r, execs, s));
+                        block.AddRange(RowLines(r, execs, s, measure));
                         blocks.Add(block);
                     }
                     for (int k = 0; k < s.ReserveLines; k++) blocks.Add(new List<SpecLine> { Blank() });
@@ -158,7 +194,23 @@ namespace GroupSpecB
                         if (block.Count == 1 && block[0].Kind == LineKind.Blank) continue;
                         page = NewPage(pages, d, execs);
                     }
-                    page.Lines.AddRange(block);
+                    // запись не помещается даже на пустой лист — разрываем
+                    List<SpecLine> rest = block;
+                    while (page.Lines.Count + rest.Count > Capacity(page, s))
+                    {
+                        int room = Capacity(page, s) - page.Lines.Count;
+                        page.Lines.AddRange(rest.GetRange(0, room));
+                        rest = rest.GetRange(room, rest.Count - room);
+                        if (warnings != null)
+                        {
+                            SpecLine first = block.Find(l => l.Row != null);
+                            string what = first == null ? "" : (first.Row.Designation != "" ? first.Row.Designation : first.Row.Name);
+                            warnings.Add("Запись «" + what + "» длиннее листа и разорвана между листами " +
+                                         page.Number + " и " + (page.Number + 1) + ". Сократите текст или задайте переносы «$».");
+                        }
+                        page = NewPage(pages, d, execs);
+                    }
+                    page.Lines.AddRange(rest);
                 }
             }
             foreach (SpecPage p in pages)
@@ -189,7 +241,7 @@ namespace GroupSpecB
             {
                 if (l.Kind != LineKind.Data) { prevBase = null; continue; }
                 if (!l.FirstOfRow) continue;
-                if (l.Row == null || l.Row.Section == Sections.Documentation) { prevBase = null; continue; }
+                if (l.Row == null || !Sections.HasExecutions(l.Row.Section)) { prevBase = null; continue; }
                 string b, n;
                 bool hasNum = SpecLogic.SplitExecution(l.Row.Designation, out b, out n);
                 if (b == "" || HasManualBreaks(l.Row.Designation)) { prevBase = null; continue; }
