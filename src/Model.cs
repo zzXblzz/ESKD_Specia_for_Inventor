@@ -1,0 +1,307 @@
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
+using System.Text;
+using System.Xml.Serialization;
+
+namespace GroupSpecB
+{
+    /// <summary>Разделы спецификации в порядке ГОСТ 2.106.</summary>
+    public static class Sections
+    {
+        public const string Documentation = "Документация";
+        public const string Complexes = "Комплексы";
+        public const string Assemblies = "Сборочные единицы";
+        public const string Parts = "Детали";
+        public const string Standard = "Стандартные изделия";
+        public const string Other = "Прочие изделия";
+        public const string Materials = "Материалы";
+        public const string Kits = "Комплекты";
+
+        public static readonly string[] Order =
+        {
+            Documentation, Complexes, Assemblies, Parts, Standard, Other, Materials, Kits
+        };
+
+        public static int IndexOf(string section)
+        {
+            int i = Array.IndexOf(Order, section);
+            return i < 0 ? Order.Length : i;
+        }
+
+        /// <summary>Разделы, в которых заполняется графа «Формат» (из свойства LastFormat модели).</summary>
+        public static bool HasFormat(string section)
+        {
+            return section == Documentation || section == Assemblies || section == Parts;
+        }
+
+        /// <summary>Разделы, в которых составные части сортируются по наименованию, а не по обозначению.</summary>
+        public static bool SortByName(string section)
+        {
+            return section == Standard || section == Other || section == Materials;
+        }
+    }
+
+    public static class RowSource
+    {
+        public const string Bom = "BOM";
+        public const string Model = "Модель";
+        public const string Manual = "Вручную";
+    }
+
+    /// <summary>Исполнение изделия (строка iAssembly, состояние модели или единственное исполнение).</summary>
+    public class Execution
+    {
+        public string Key;          // уникальный ключ: имя члена iAssembly / состояния модели / полное имя файла
+        public string Designation;  // обозначение исполнения (Part Number)
+        public string Label;        // подзаголовок графы: "–", "01", "02" ...
+        public bool Enabled = true;
+        public string Kind = "";    // Row (строка iAssembly), State (состояние модели), File (отдельная модель)
+        public string Path = "";    // файл фабрики / модели исполнения (для File — полное имя документа)
+        public string Member = "";  // имя строки iAssembly или состояния модели
+        public bool UserAdded;      // исполнение добавлено кнопкой «Добавить исполнение»
+    }
+
+    public class QtyEntry
+    {
+        [XmlAttribute] public string Exec;
+        [XmlAttribute] public string Value;
+        public QtyEntry() { }
+        public QtyEntry(string exec, string value) { Exec = exec; Value = value; }
+    }
+
+    /// <summary>Строка групповой спецификации.</summary>
+    public class SpecRow
+    {
+        public string Id = Guid.NewGuid().ToString("N");
+        public string Source = RowSource.Manual;
+        public string Key = "";          // путь к файлу компонента (для BOM и моделей)
+        public List<string> MergedKeys = new List<string>(); // другие файлы, слитые в эту строку (то же обозначение / наименование)
+        public string Section = Sections.Parts;
+        public string Format = "";
+        public string Zone = "";
+        public string Pos = "";
+        public string Designation = "";
+        public string Name = "";
+        public string Note = "";
+        public string Unit = "";         // единица измерения, если количество не в штуках
+        public string BomItem = "";      // номер позиции в BOM (группирует взаимозаменяемые части)
+        public bool InMain;              // применяется в основном (первом) исполнении
+        public bool Hidden;              // исключена из спецификации пользователем (строки BOM не удаляются)
+        public List<QtyEntry> Qty = new List<QtyEntry>();
+        public List<string> Edited = new List<string>(); // поля, исправленные вручную
+
+        public List<string> AllKeys()
+        {
+            List<string> r = new List<string>();
+            if (!string.IsNullOrEmpty(Key)) r.Add(Key);
+            r.AddRange(MergedKeys);
+            return r;
+        }
+
+        public string GetQty(string exec)
+        {
+            foreach (QtyEntry q in Qty) if (q.Exec == exec) return q.Value ?? "";
+            return "";
+        }
+
+        public void SetQty(string exec, string value)
+        {
+            for (int i = 0; i < Qty.Count; i++)
+            {
+                if (Qty[i].Exec == exec)
+                {
+                    if (string.IsNullOrEmpty(value)) Qty.RemoveAt(i); else Qty[i].Value = value;
+                    return;
+                }
+            }
+            if (!string.IsNullOrEmpty(value)) Qty.Add(new QtyEntry(exec, value));
+        }
+
+        public bool IsEdited(string field) { return Edited.Contains(field); }
+
+        public void MarkEdited(string field)
+        {
+            if (!Edited.Contains(field)) Edited.Add(field);
+        }
+    }
+
+    /// <summary>Настройки оформления и данные основной надписи.</summary>
+    public class SpecSettings
+    {
+        [Browsable(false)]
+        public string SpecDesignation { get; set; }
+
+        [Browsable(false)]
+        public string BaseDesignation { get; set; }
+
+        [Browsable(false)]
+        public string ProductName { get; set; }
+
+        [Category("1. Спецификация"), DisplayName("Наименование берётся из"),
+         Description("Description или Title (iProperties компонентов).")]
+        public string NameProperty { get; set; }
+
+        [Category("1. Спецификация"), DisplayName("Добавлять «Сборочный чертеж»"),
+         Description("Строка раздела «Документация» с обозначением <базовое>СБ.")]
+        public bool AddAssemblyDrawing { get; set; }
+
+        [Category("1. Спецификация"), DisplayName("Формат сборочного чертежа")]
+        public string AssemblyDrawingFormat { get; set; }
+
+        [Category("1. Спецификация"), DisplayName("Сокращать обозначения исполнений"),
+         Description("ГОСТ 2.113 п. 5.3: вторая и следующие подряд идущие части с тем же базовым обозначением пишутся как «-01».")]
+        public bool AbbreviateExecutions { get; set; }
+
+        [Browsable(false)] public string Designer { get; set; }
+        [Browsable(false)] public string Checker { get; set; }
+        [Browsable(false)] public string TechControl { get; set; }
+        [Browsable(false)] public string NormControl { get; set; }
+        [Browsable(false)] public string Approver { get; set; }
+        [Browsable(false)] public string Organization { get; set; }
+        [Browsable(false)] public string Litera { get; set; }
+        [Browsable(false)] public string InvNo { get; set; }
+        [Browsable(false)] public string FirstUse { get; set; }
+        [Browsable(false)] public string RefNo { get; set; }
+
+        [Category("3. Вёрстка"), DisplayName("Строк на первом листе (форма 1б)")] public int RowsFirst { get; set; }
+        [Category("3. Вёрстка"), DisplayName("Строк на последующих листах (форма 1а)")] public int RowsNext { get; set; }
+        [Category("3. Вёрстка"), DisplayName("Высота шрифта, мм")] public double FontHeight { get; set; }
+        [Category("3. Вёрстка"), DisplayName("Шрифт")] public string FontName { get; set; }
+        [Category("3. Вёрстка"), DisplayName("Наклонный шрифт")] public bool Italic { get; set; }
+        [Category("3. Вёрстка"), DisplayName("Средняя ширина символа, мм"),
+         Description("Используется для переноса текста по строкам.")]
+        public double CharWidth { get; set; }
+        [Category("3. Вёрстка"), DisplayName("Свободных строк после раздела")] public int ReserveLines { get; set; }
+
+        [Category("1. Спецификация"), DisplayName("Резерв номеров позиций в конце раздела"),
+         Description("Сколько номеров позиций пропустить перед первым номером следующего раздела (резерв для последующих записей).")]
+        public int PosReserve { get; set; }
+
+        [Category("1. Спецификация"), DisplayName("Перенумеровать позиции в сборке"),
+         Description("При формировании записать номера позиций спецификации в BOM родительских сборок исполнений (структурированный вид, номера блокируются). Фабрика iAssembly сохраняется, её члены пересоздаются.")]
+        public bool RenumberAssemblyBom { get; set; }
+
+        [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Обозначение"),
+         Description("Подставляется, если свойство «Обозначение» пусто и в 3D-модели, и в чертеже.")]
+        public string DefDesignation { get; set; }
+        [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Наименование")] public string DefName { get; set; }
+        [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Организация")] public string DefCompany { get; set; }
+        [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Разраб.")] public string DefDesigner { get; set; }
+        [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Пров.")] public string DefChecker { get; set; }
+        [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Т.контр.")] public string DefTechControl { get; set; }
+        [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Н.контр.")] public string DefNormControl { get; set; }
+        [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Утв.")] public string DefApprover { get; set; }
+        [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Лит.")] public string DefLitera { get; set; }
+
+        /// <summary>Значение графы основной надписи по умолчанию по ключу графы (TitleField.Key).</summary>
+        public string GetTitleDefault(string key)
+        {
+            System.Reflection.PropertyInfo p = typeof(SpecSettings).GetProperty("Def" + key);
+            object v = p != null ? p.GetValue(this, null) : null;
+            return v == null ? "" : v.ToString();
+        }
+
+        public SpecSettings()
+        {
+            NameProperty = "Description";
+            AddAssemblyDrawing = true;
+            AssemblyDrawingFormat = "А4";
+            AbbreviateExecutions = true;
+            RowsFirst = 16;
+            RowsNext = 19;
+            FontHeight = 3.5;
+            FontName = "GOST Common";
+            Italic = true;
+            CharWidth = 2.3;
+            ReserveLines = 0;
+            PosReserve = 2;
+            RenumberAssemblyBom = true;
+            SpecDesignation = ""; BaseDesignation = ""; ProductName = "";
+            DefDesignation = ""; DefName = ""; DefCompany = ""; DefDesigner = ""; DefChecker = "";
+            DefTechControl = ""; DefNormControl = ""; DefApprover = ""; DefLitera = "";
+            Designer = ""; Checker = ""; TechControl = ""; NormControl = ""; Approver = "";
+            Organization = ""; Litera = ""; InvNo = ""; FirstUse = ""; RefNo = "";
+        }
+    }
+
+    /// <summary>Полное состояние групповой спецификации. Хранится в атрибутах чертежа.</summary>
+    public class SpecData
+    {
+        public string SourcePath = "";
+        public string SourceKind = "";   // iAssembly / ModelStates / Single
+        public bool ManualOrder;         // порядок строк задан пользователем — при обновлении не пересортировывать
+        public string DrawingFormat = "";  // формат первого листа сборочного чертежа (при запуске из чертежа)
+        public string BaseDesignation = "";  // базовое обозначение исполнений, заданное вручную (пусто — автоматически)
+        public string InvNo = "", FirstUse = "", RefNo = "";   // дополнительные графы: Инв. № подл., Перв. примен., Справ. №
+        public List<Execution> Executions = new List<Execution>();
+        public List<SpecRow> Rows = new List<SpecRow>();
+        public SpecSettings Settings = new SpecSettings();
+
+        public List<Execution> EnabledExecutions()
+        {
+            List<Execution> r = new List<Execution>();
+            foreach (Execution e in Executions) if (e.Enabled) r.Add(e);
+            return r;
+        }
+
+        public string ToXml()
+        {
+            XmlSerializer xs = new XmlSerializer(typeof(SpecData));
+            using (StringWriter sw = new StringWriter())
+            {
+                xs.Serialize(sw, this);
+                return sw.ToString();
+            }
+        }
+
+        public static SpecData FromXml(string xml)
+        {
+            XmlSerializer xs = new XmlSerializer(typeof(SpecData));
+            using (StringReader sr = new StringReader(xml))
+            {
+                return (SpecData)xs.Deserialize(sr);
+            }
+        }
+    }
+
+    /// <summary>Параметры (вкладка «Параметры») — общие для всех чертежей:
+    /// %APPDATA%\GroupSpecB\Settings.xml.</summary>
+    public static class GlobalSettings
+    {
+        static string FilePath
+        {
+            get
+            {
+                return System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData),
+                                              "GroupSpecB", "Settings.xml");
+            }
+        }
+
+        public static bool Exists { get { return File.Exists(FilePath); } }
+
+        public static SpecSettings Load()
+        {
+            try
+            {
+                if (File.Exists(FilePath))
+                    using (StreamReader r = new StreamReader(FilePath))
+                        return (SpecSettings)new XmlSerializer(typeof(SpecSettings)).Deserialize(r);
+            }
+            catch { }
+            return new SpecSettings();
+        }
+
+        public static void Save(SpecSettings s)
+        {
+            try
+            {
+                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(FilePath));
+                using (StreamWriter w = new StreamWriter(FilePath))
+                    new XmlSerializer(typeof(SpecSettings)).Serialize(w, s);
+            }
+            catch { }
+        }
+    }
+}

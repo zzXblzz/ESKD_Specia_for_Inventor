@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Addin Type="Standard">
+  <ClassId>{6B3C2E1A-8F4D-4C9B-A7E2-3D51B0C4F7A9}</ClassId>
+  <ClientId>{6B3C2E1A-8F4D-4C9B-A7E2-3D51B0C4F7A9}</ClientId>
+  <DisplayName>Групповая спецификация (ГОСТ 2.113, вариант Б)</DisplayName>
+  <Description>Компаньон ESKD Specia: групповая спецификация по варианту Б, исполнения из BOM параметрической сборки</Description>
+  <Assembly>C:\Users\slesarev\GroupSpecB\bin\GroupSpecB.dll</Assembly>
+  <LoadOnStartUp>1</LoadOnStartUp>
+  <UserUnloadable>1</UserUnloadable>
+  <Hidden>0</Hidden>
+  <SupportedSoftwareVersionGreaterThan>24..</SupportedSoftwareVersionGreaterThan>
+  <DataVersion>1</DataVersion>
+  <UserInterfaceVersion>1</UserInterfaceVersion>
+  <LoadBehavior>0</LoadBehavior>
+</Addin>

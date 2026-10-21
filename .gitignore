@@ -1,0 +1,20 @@
+# Результаты сборки
+bin/
+bin_dev/
+obj/
+*.dll
+*.exe
+*.pdb
+
+# Тестовые выходные файлы и модели Inventor
+test_out/
+test_sample/
+OldVersions/
+*.idw
+*.iam
+*.ipt
+*.ipn
+*.dwg
+*.ipj
+*.pdf
+*.lck
