@@ -37,7 +37,7 @@ namespace GroupSpecB
         ToolStripStatusLabel status;
         CheckBox showHidden;
         ToolStripComboBox typeBox;
-        ToolStripButton onDrawingBtn;   // ГОСТ 2.106: спецификация над основной надписью листа чертежа
+        CheckBox onDrawingBox;          // ГОСТ 2.106: спецификация над основной надписью листа чертежа
         bool loading;
 
         static readonly string[] TypeValues = { SpecTypes.Auto, SpecTypes.Gost2106, SpecTypes.Gost2113 };
@@ -76,25 +76,31 @@ namespace GroupSpecB
             typeBox.SelectedIndex = Math.Max(0, Array.IndexOf(TypeValues, data.SpecType ?? SpecTypes.Auto));
             typeBox.SelectedIndexChanged += OnTypeChanged;
             ts.Items.Add(typeBox);
-            onDrawingBtn = new ToolStripButton("На листе чертежа") { CheckOnClick = true, Checked = data.OnDrawingSheet,
-                DisplayStyle = ToolStripItemDisplayStyle.Text,
-                ToolTipText = "ГОСТ 2.106: вывести таблицу спецификации на активный лист чертежа над основной надписью, а не на отдельные листы «СП-N»" };
-            onDrawingBtn.CheckedChanged += (s, e) => { if (!loading) data.OnDrawingSheet = onDrawingBtn.Checked; };
-            ts.Items.Add(onDrawingBtn);
+            onDrawingBox = new CheckBox { Text = "На листе чертежа", Checked = data.OnDrawingSheet, AutoSize = true,
+                BackColor = Color.Transparent, Padding = new Padding(6, 0, 0, 0) };
+            onDrawingBox.CheckedChanged += (s, e) => { if (!loading) data.OnDrawingSheet = onDrawingBox.Checked; };
+            ts.Items.Add(new ToolStripControlHost(onDrawingBox)
+            {
+                ToolTipText = "ГОСТ 2.106: вывести таблицу спецификации на активный лист чертежа над основной надписью, а не на отдельные листы «СП-N»"
+            });
             ts.Items.Add(new ToolStripSeparator());
             ts.Items.Add(Btn("Обновить из BOM", "Перечитать исполнения и BOM параметрической сборки (ручные правки сохраняются)", OnRefresh));
             ts.Items.Add(new ToolStripSeparator());
             ts.Items.Add(Btn("Добавить исполнение (3D-модель)…", "Добавить в групповую спецификацию ещё одно исполнение — сборку (.iam); её BOM станет отдельной графой «Кол. на исполн.»", OnAddExecution));
-            ts.Items.Add(Btn("Добавить строку", "Пустая строка (документ, материал и т. п.) в разделе выделенной строки", OnAddRow));
-            ts.Items.Add(Btn("Удалить", "Удалить строки, добавленные вручную (строки BOM — снять флажок «В СП»), и выделенные свободные строки между разделами (только в этом чертеже)", OnDelete));
-            ts.Items.Add(Btn("Вернуть свободные строки", "Свободные строки разделов выделенных строк — снова по умолчанию (одна строка до и после заголовка, после раздела — по параметрам)", OnResetGaps));
-            ts.Items.Add(new ToolStripSeparator());
-            ts.Items.Add(Btn("▲", "Переместить выше (в пределах раздела)", (s, e) => MoveRows(-1)));
-            ts.Items.Add(Btn("▼", "Переместить ниже (в пределах раздела)", (s, e) => MoveRows(1)));
-            ts.Items.Add(Btn("Кол. во всех исп.…", "Записать одно количество во все исполнения для выделенных строк", OnFillQty));
-            ts.Items.Add(new ToolStripSeparator());
-            ts.Items.Add(Btn("Сортировать по ГОСТ", "Порядок записи по ГОСТ 2.106 / 2.113 и нумерация позиций", OnSort));
-            ts.Items.Add(Btn("Перенумеровать", "Нумерация позиций в текущем порядке строк", OnRenumber));
+
+            // вторая строка кнопок — правка строк спецификации
+            ToolStrip ts2 = new ToolStrip();
+            ts2.GripStyle = ToolStripGripStyle.Hidden;
+            ts2.Items.Add(Btn("Добавить строку", "Пустая строка (документ, материал и т. п.) в разделе выделенной строки", OnAddRow));
+            ts2.Items.Add(Btn("Удалить", "Удалить строки, добавленные вручную (строки BOM — снять флажок «В СП»), и выделенные свободные строки между разделами (только в этом чертеже)", OnDelete));
+            ts2.Items.Add(Btn("Вернуть свободные строки", "Свободные строки разделов выделенных строк — снова по умолчанию (одна строка до и после заголовка, после раздела — по параметрам)", OnResetGaps));
+            ts2.Items.Add(new ToolStripSeparator());
+            ts2.Items.Add(Btn("▲", "Переместить выше (в пределах раздела)", (s, e) => MoveRows(-1)));
+            ts2.Items.Add(Btn("▼", "Переместить ниже (в пределах раздела)", (s, e) => MoveRows(1)));
+            ts2.Items.Add(Btn("Кол. во всех исп.…", "Записать одно количество во все исполнения для выделенных строк", OnFillQty));
+            ts2.Items.Add(new ToolStripSeparator());
+            ts2.Items.Add(Btn("Сортировать по ГОСТ", "Порядок записи по ГОСТ 2.106 / 2.113 и нумерация позиций", OnSort));
+            ts2.Items.Add(Btn("Перенумеровать", "Нумерация позиций в текущем порядке строк", OnRenumber));
 
             ToolStripButton ok = Btn("Сформировать спецификацию", "Вывести листы на чертёж", (s, e) => { Commit(); DialogResult = DialogResult.OK; Close(); });
             ok.Font = new Font(ok.Font, FontStyle.Bold);
@@ -188,6 +194,7 @@ namespace GroupSpecB
             ss.Items.Add(status);
 
             Controls.Add(tabs);
+            Controls.Add(ts2);
             Controls.Add(ts);
             Controls.Add(ss);
         }
@@ -255,7 +262,7 @@ namespace GroupSpecB
         void LoadAll()
         {
             Text = SpecTypes.Title(data.EffectiveType());   // тип «по числу 3D-моделей» меняется при добавлении исполнений
-            onDrawingBtn.Enabled = data.Is2106;
+            onDrawingBox.Enabled = data.Is2106;
             FillExecGrid();
             props.SelectedObject = data.Settings;
             FillGrid();
@@ -674,7 +681,7 @@ namespace GroupSpecB
         void UpdateTypeView()
         {
             Text = SpecTypes.Title(data.EffectiveType());
-            onDrawingBtn.Enabled = data.Is2106;   // групповая — только на отдельных листах
+            onDrawingBox.Enabled = data.Is2106;   // групповая — только на отдельных листах
             SpecLogic.EnsureAssemblyDrawingRow(data);
             SpecLogic.Renumber(data);   // в ГОСТ 2.106 строки только других исполнений не нумеруются
             FillGrid();

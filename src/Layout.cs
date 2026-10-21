@@ -169,6 +169,8 @@ namespace GroupSpecB
                 List<List<SpecLine>> blocks = new List<List<SpecLine>>();
                 foreach (string section in Sections.Order)
                 {
+                    // спецификация на поле чертежа — сам документ: раздел «Документация» не выводится
+                    if (data.OnDrawing && section == Sections.Documentation) continue;
                     // строка без количества ни в одном исполнении (документ, свободная запись) — на листах
                     // первого десятка, иначе при больше чем 10 исполнениях она пропала бы со всех листов
                     List<SpecRow> rows = data.Rows.FindAll(r => r.Section == section && !r.Hidden &&
