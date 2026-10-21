@@ -213,6 +213,12 @@ namespace GroupSpecB
                      "и обозреватель Inventor перестаёт обновляться. Да — надстройка прерывает её (если Specia загружена).")]
         public bool FixSpeciaTransaction { get; set; }
 
+        [Category("1. Спецификация"), DisplayName("Свойства материала в чертеже детали"),
+         Description("Да — как в ESKD Specia: в пользовательские свойства чертежа записывается материал детали первого вида. " +
+                     "Материал «Сортамент\\Марка\\Стандарт» (или через «|») — в RollingMaterial, MaterialUpLine, MaterialDownLine, " +
+                     "черта из «_» — в MaterialLine; иначе — в SingleMaterial. SingleMaterial «-», «_» или «см. …» не перезаписывается.")]
+        public bool FillMaterialProps { get; set; }
+
         [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Обозначение"),
          Description("Подставляется, если свойство «Обозначение» пусто и в 3D-модели, и в чертеже.")]
         public string DefDesignation { get; set; }
@@ -249,6 +255,7 @@ namespace GroupSpecB
             PosReserve = 2;
             RenumberAssemblyBom = true;
             FixSpeciaTransaction = true;
+            FillMaterialProps = true;
             SpecDesignation = ""; BaseDesignation = "";
             DefDesignation = ""; DefName = ""; DefCompany = ""; DefDesigner = ""; DefChecker = "";
             DefTechControl = ""; DefNormControl = ""; DefApprover = ""; DefLitera = "";

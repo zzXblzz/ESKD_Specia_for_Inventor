@@ -17,6 +17,7 @@ namespace GroupSpecB
         Application app;
         ButtonDefinition button;
         ApplicationEvents appEvents;
+        UserInputEvents inputEvents;
 
         public void Activate(ApplicationAddInSite site, bool firstTime)
         {
@@ -32,6 +33,9 @@ namespace GroupSpecB
             appEvents = app.ApplicationEvents;
             appEvents.OnSaveDocument += OnSaveDocument;
             appEvents.OnActivateDocument += OnActivateDocument;
+            inputEvents = app.CommandManager.UserInputEvents;
+            inputEvents.OnTerminateCommand += OnTerminateCommand;
+            inputEvents.OnActivateCommand += OnActivateCommand;
             txTimer = new Timer { Interval = 200 };
             txTimer.Tick += OnTxTimer;
         }
@@ -56,6 +60,7 @@ namespace GroupSpecB
             try
             {
                 if (doc.DocumentType != DocumentTypeEnum.kDrawingDocumentObject) return;
+                UpdateMaterial((DrawingDocument)doc, "Свойства материала при активации чертежа");
                 if (!GlobalSettings.Load().FixSpeciaTransaction || !SpeciaLoaded()) return;
                 txTimer.Stop();
                 txTicksLeft = TxTicks;
@@ -136,10 +141,42 @@ namespace GroupSpecB
             {
                 if (doc.DocumentType != DocumentTypeEnum.kDrawingDocumentObject) return;
                 DrawingDocument dwg = (DrawingDocument)doc;
+                UpdateMaterial(dwg, "Свойства материала при сохранении");
                 if (DrawingWriter.HasData(dwg) || GlobalSettings.Load().SyncTitleOnSaveAllDrawings)
                     SpecTitleBlock.CopyFromFirstViewModel(app, dwg);
             }
             catch (Exception ex) { Log.Write("Свойства основной надписи при сохранении", ex); }   // сохранение не должно срываться из-за надстройки
+        }
+
+        /// <summary>Свойства материала в активном чертеже — после вставки/замены/удаления вида и окна iProperties.</summary>
+        void OnTerminateCommand(string command, NameValueMap context)
+        {
+            if (Array.IndexOf(DrawingMaterial.Commands, command) < 0) return;
+            UpdateMaterial(ActiveDrawing(), "Свойства материала после " + command);
+        }
+
+        /// <summary>Свойства материала перед печатью чертежа.</summary>
+        void OnActivateCommand(string command, NameValueMap context)
+        {
+            if (command != "AppFilePrintCmd") return;
+            UpdateMaterial(ActiveDrawing(), "Свойства материала перед печатью");
+        }
+
+        DrawingDocument ActiveDrawing()
+        {
+            try
+            {
+                Document d = app.ActiveDocument;
+                return d != null && d.DocumentType == DocumentTypeEnum.kDrawingDocumentObject ? (DrawingDocument)d : null;
+            }
+            catch { return null; }
+        }
+
+        void UpdateMaterial(DrawingDocument dwg, string what)
+        {
+            if (dwg == null) return;
+            try { if (GlobalSettings.Load().FillMaterialProps) DrawingMaterial.Update(dwg); }
+            catch (Exception ex) { Log.Write(what, ex); }
         }
 
         void OnExecute(NameValueMap context)
@@ -160,6 +197,12 @@ namespace GroupSpecB
                 appEvents.OnSaveDocument -= OnSaveDocument;
                 appEvents.OnActivateDocument -= OnActivateDocument;
                 appEvents = null;
+            }
+            if (inputEvents != null)
+            {
+                inputEvents.OnTerminateCommand -= OnTerminateCommand;
+                inputEvents.OnActivateCommand -= OnActivateCommand;
+                inputEvents = null;
             }
             if (button != null) { button.OnExecute -= OnExecute; Marshal.ReleaseComObject(button); button = null; }
             app = null;

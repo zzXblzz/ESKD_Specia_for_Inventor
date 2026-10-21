@@ -18,6 +18,7 @@ static class TestRunner
         try
         {
             Application app = (Application)Marshal.GetActiveObject("Inventor.Application");
+            if (args[0] == "--material") return MaterialTest(app, args);
             string input = args[0], outPath = args[1];
             bool form = Array.IndexOf(args, "--form") >= 0;
             SpecData data = new SpecData();
@@ -147,6 +148,50 @@ static class TestRunner
         {
             Console.WriteLine("FAIL: " + ex);
             return 1;
+        }
+    }
+
+    // TestRunner.exe --material <деталь.ipt> [имя материала] — новый чертёж с видом детали, свойства материала
+    // до и после «-» в SingleMaterial и после удаления вида. Имя материала задаётся переименованием материала
+    // детали (деталь закрывается без сохранения). Чертёж не сохраняется.
+    static int MaterialTest(Application app, string[] args)
+    {
+        PartDocument part = (PartDocument)app.Documents.Open(args[1], false);
+        try
+        {
+            if (args.Length > 2) part.ActiveMaterial.DisplayName = args[2];   // материал детали — ресурс самой детали
+            Console.WriteLine("MATERIAL " + DrawingMaterial.PartMaterial(part));
+            DrawingDocument dwg = DrawingWriter.CreateDrawing(app);
+            try
+            {
+                Sheet sh = dwg.Sheets[1];
+                DrawingView view = sh.DrawingViews.AddBaseView((_Document)part, app.TransientGeometry.CreatePoint2d(15, 15), 1,
+                    ViewOrientationTypeEnum.kFrontViewOrientation, DrawingViewStyleEnum.kHiddenLineDrawingViewStyle);
+                DrawingMaterial.Update(dwg);
+                PrintMaterial(dwg, "VIEW");
+                ((Document)dwg).PropertySets["{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"][MaterialLogic.Single].Value = "-";
+                DrawingMaterial.Update(dwg);
+                PrintMaterial(dwg, "MANUAL");
+                ((Document)dwg).PropertySets["{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"][MaterialLogic.Single].Value = "";
+                view.Delete();
+                DrawingMaterial.Update(dwg);
+                PrintMaterial(dwg, "NOVIEW");
+            }
+            finally { ((Document)dwg).Close(true); }
+        }
+        finally { part.Close(true); }
+        Console.WriteLine("OK");
+        return 0;
+    }
+
+    static void PrintMaterial(DrawingDocument dwg, string tag)
+    {
+        PropertySet ps = ((Document)dwg).PropertySets["{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"];
+        foreach (string n in MaterialLogic.All)
+        {
+            string v;
+            try { v = "«" + ps[n].Value + "»"; } catch { v = "(нет)"; }
+            Console.WriteLine(tag + " " + n + " = " + v);
         }
     }
 
