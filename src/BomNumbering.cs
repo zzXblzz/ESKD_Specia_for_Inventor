@@ -147,6 +147,12 @@ namespace GroupSpecB
                             changed |= c;
                         }
                     }
+                    else if (cd.IsiAssemblyFactory && t.MemberRows.Count > 0)
+                    {
+                        bool c;
+                        numbered = NumberFactory(asm, t.MemberRows, posByKey, notes, System.IO.Path.GetFileName(t.Path), out c);
+                        changed |= c;
+                    }
                     else
                     {
                         bool c;
@@ -202,19 +208,88 @@ namespace GroupSpecB
         /// не было конфликтов номеров при перестановке.</summary>
         static int NumberView(BOM bom, Dictionary<string, string> posByKey, List<string> notes, string where, out bool changed)
         {
-            changed = false;
+            List<BOMRow> rows = StructuredRows(bom);
+            string[] desired = new string[rows.Count];
+            Collect(rows, desired, false, posByKey, notes, where);
+            return Apply(rows, desired, notes, where, out changed);
+        }
+
+        /// <summary>Фабрика iAssembly: в её BOM есть строки для компонентов всех членов (замена по таблице,
+        /// включение/исключение), но компонент строки и её количество — по активному члену; строки других
+        /// членов показывают компонент активного члена с количеством 0. Поэтому номера собираются по очереди
+        /// для каждого члена: он делается активным, и номер из спецификации получают строки с ненулевым
+        /// количеством. Затем активный член восстанавливается.</summary>
+        static int NumberFactory(AssemblyDocument asm, List<string> members, Dictionary<string, string> posByKey,
+                                 List<string> notes, string where, out bool changed)
+        {
+            AssemblyComponentDefinition cd = asm.ComponentDefinition;
+            iAssemblyFactory f = cd.iAssemblyFactory;
+            iAssemblyTableRow def = f.DefaultRow;
+            iAssemblyTableRow active = def;
+            string[] desired = null;
+            try
+            {
+                foreach (string m in members)
+                {
+                    iAssemblyTableRow row = null;
+                    for (int i = 1; i <= f.TableRows.Count; i++) if (f.TableRows[i].MemberName == m) row = f.TableRows[i];
+                    if (row == null) continue;
+                    if (row.MemberName != active.MemberName)
+                    {
+                        // иначе Inventor не пересчитает количества строк BOM (см. ReleaseBomReferences)
+                        BomCollector.ReleaseBomReferences();
+                        f.DefaultRow = row; active = row; asm.Update();
+                    }
+                    CollectFrom(cd.BOM, ref desired, posByKey, notes, where + " <" + m + ">");
+                }
+            }
+            finally
+            {
+                if (active.MemberName != def.MemberName) { BomCollector.ReleaseBomReferences(); f.DefaultRow = def; asm.Update(); }
+            }
+            List<BOMRow> rows = StructuredRows(cd.BOM);
+            if (desired == null) desired = new string[rows.Count];
+            return Apply(rows, desired, notes, where, out changed);
+        }
+
+        /// <summary>Номера для строк BOM текущего члена фабрики. Обёртки строк живут только внутри метода,
+        /// чтобы их можно было освободить перед сменой члена.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static void CollectFrom(BOM bom, ref string[] desired, Dictionary<string, string> posByKey, List<string> notes, string where)
+        {
+            List<BOMRow> rows = StructuredRows(bom);
+            if (desired == null) desired = new string[rows.Count];
+            else if (desired.Length != rows.Count) throw new Exception("состав BOM фабрики меняется при смене члена (" + where + ")");
+            Collect(rows, desired, true, posByKey, notes, where);
+        }
+
+        static List<BOMRow> StructuredRows(BOM bom)
+        {
             BOMView view = null;
             foreach (BOMView v in bom.BOMViews) if (v.ViewType == BOMViewTypeEnum.kStructuredBOMViewType) view = v;
             if (view == null) throw new Exception("нет структурированного вида BOM");
-
             List<BOMRow> rows = new List<BOMRow>();
-            List<string> desired = new List<string>();
+            foreach (BOMRow r in view.BOMRows) rows.Add(r);
+            return rows;
+        }
+
+        /// <summary>Номера из спецификации для ещё не назначенных строк (activeOnly — только строки
+        /// с ненулевым количеством).</summary>
+        static void Collect(List<BOMRow> rows, string[] desired, bool activeOnly, Dictionary<string, string> posByKey,
+                            List<string> notes, string where)
+        {
+            bool[] active = new bool[rows.Count];
             HashSet<string> taken = new HashSet<string>();
-            int max = 0;
-            foreach (BOMRow r in view.BOMRows)
+            for (int i = 0; i < rows.Count; i++)
             {
-                rows.Add(r);
-                string key = BomCollector.RowKey(r);
+                active[i] = true;
+                if (activeOnly) { try { active[i] = rows[i].ItemQuantity != 0; } catch { } }
+                if (active[i] && desired[i] != null) taken.Add(desired[i]);
+            }
+            for (int i = 0; i < rows.Count; i++)
+            {
+                if (desired[i] != null || !active[i]) continue;
+                string key = BomCollector.RowKey(rows[i]);
                 string pos = null;
                 if (key != null) posByKey.TryGetValue(key, out pos);
                 if (pos != null && !taken.Add(pos))
@@ -223,7 +298,16 @@ namespace GroupSpecB
                     notes.Add(where + ": номер " + pos + " не назначен второй строке BOM того же компонента");
                     pos = null;
                 }
-                desired.Add(pos);
+                desired[i] = pos;
+            }
+        }
+
+        static int Apply(List<BOMRow> rows, string[] desired, List<string> notes, string where, out bool changed)
+        {
+            changed = false;
+            int max = 0;
+            foreach (string pos in desired)
+            {
                 int p;
                 if (pos != null && int.TryParse(pos, out p)) max = Math.Max(max, p);
             }
