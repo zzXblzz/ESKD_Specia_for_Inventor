@@ -291,6 +291,10 @@ static class UnitTests
         List<SpecPage> one = Layout.Build(data);
         Eq(1, one.Count, "на листе чертежа — одна таблица");
         Check(one[0].OnDrawing && one[0].Lines.Count > 40, "все строки в таблице над основной надписью");
+        Check(!one[0].Lines.Exists(l => l.Name == Sections.Documentation || l.Row != null && l.Row.Section == Sections.Documentation),
+              "на поле чертежа раздел «Документация» не выводится");
+        Check(DataLines(Layout.Build(new SpecData { SpecType = SpecTypes.Gost2106, Rows = data.Rows, Executions = data.Executions }))
+              .Exists(l => l.Row != null && l.Row.Section == Sections.Documentation), "на листах «СП-N» — выводится");
         Check(SpecData.FromXml(data.ToXml()).OnDrawingSheet, "выбор сохраняется в чертеже");
         data.SpecType = SpecTypes.Gost2113;
         Check(!data.OnDrawing && Layout.Build(data).Count > 1, "групповая — всегда на отдельных листах");
