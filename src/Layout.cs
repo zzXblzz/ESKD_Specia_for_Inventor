@@ -111,8 +111,9 @@ namespace GroupSpecB
         static SpecLine Blank() { return new SpecLine { Kind = LineKind.Blank }; }
 
         /// <summary>Строит листы спецификации. При числе исполнений больше десяти запись повторяется
-        /// для каждого следующего десятка (ГОСТ 2.113 п. 5.5.2 е, ж).</summary>
-        public static List<SpecPage> Build(SpecData data)
+        /// для каждого следующего десятка (ГОСТ 2.113 п. 5.5.2 е, ж). Запись, которая длиннее целого листа,
+        /// разрывается между листами (иначе её конец потерялся бы); об этом — строка в warnings.</summary>
+        public static List<SpecPage> Build(SpecData data, List<string> warnings = null)
         {
             SpecSettings s = data.Settings;
             List<Execution> all = data.EnabledExecutions();
@@ -158,7 +159,23 @@ namespace GroupSpecB
                         if (block.Count == 1 && block[0].Kind == LineKind.Blank) continue;
                         page = NewPage(pages, d, execs);
                     }
-                    page.Lines.AddRange(block);
+                    // запись не помещается даже на пустой лист — разрываем
+                    List<SpecLine> rest = block;
+                    while (page.Lines.Count + rest.Count > Capacity(page, s))
+                    {
+                        int room = Capacity(page, s) - page.Lines.Count;
+                        page.Lines.AddRange(rest.GetRange(0, room));
+                        rest = rest.GetRange(room, rest.Count - room);
+                        if (warnings != null)
+                        {
+                            SpecLine first = block.Find(l => l.Row != null);
+                            string what = first == null ? "" : (first.Row.Designation != "" ? first.Row.Designation : first.Row.Name);
+                            warnings.Add("Запись «" + what + "» длиннее листа и разорвана между листами " +
+                                         page.Number + " и " + (page.Number + 1) + ". Сократите текст или задайте переносы «$».");
+                        }
+                        page = NewPage(pages, d, execs);
+                    }
+                    page.Lines.AddRange(rest);
                 }
             }
             foreach (SpecPage p in pages)

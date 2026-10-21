@@ -336,12 +336,14 @@ namespace GroupSpecB
         void UpdateStatus()
         {
             int n = 0; foreach (SpecRow r in data.Rows) if (!r.Hidden) n++;
-            List<SpecPage> pages = GroupSpecB.Layout.Build(data);
+            List<string> layoutWarnings = new List<string>();
+            List<SpecPage> pages = GroupSpecB.Layout.Build(data, layoutWarnings);
             SetStatus("Исполнений: " + data.EnabledExecutions().Count + " из " + data.Executions.Count +
                       "   Строк в спецификации: " + n + "   Листов: " + pages.Count +
                       "   Базовое обозначение: " + SpecLogic.BaseDesignation(data) +
                       (data.SourcePath != "" ? "   Источник: " + data.SourcePath : "") +
-                      (SpecLogic.DuplicatePositions(data).Count > 0 ? "   ВНИМАНИЕ: повторяются позиции " + string.Join(", ", SpecLogic.DuplicatePositions(data)) : ""));
+                      (SpecLogic.DuplicatePositions(data).Count > 0 ? "   ВНИМАНИЕ: повторяются позиции " + string.Join(", ", SpecLogic.DuplicatePositions(data)) : "") +
+                      (layoutWarnings.Count > 0 ? "   ВНИМАНИЕ: " + layoutWarnings[0] : ""));
         }
 
         void Grid_CellValueChanged(object sender, DataGridViewCellEventArgs e)

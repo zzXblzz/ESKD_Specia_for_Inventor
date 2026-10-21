@@ -235,12 +235,15 @@ namespace GroupSpecB
                 finally { if (mOpened && model != null) try { model.Close(true); } catch { } }
             }
             catch (Exception ex) { titleReport = "Основная надпись: " + ex.Message; }
+            List<string> layoutWarnings = new List<string>();
             bool screen = app.ScreenUpdating;
             Transaction tr = app.TransactionManager.StartTransaction((_Document)dwg, "Групповая спецификация");
             try
             {
                 app.ScreenUpdating = false;
-                int n = new DrawingWriter(app, dwg, data) { RemoveEmptySheets = created }.Write(s => { try { app.StatusBarText = s; } catch { } });
+                DrawingWriter writer = new DrawingWriter(app, dwg, data) { RemoveEmptySheets = created };
+                int n = writer.Write(s => { try { app.StatusBarText = s; } catch { } });
+                layoutWarnings.AddRange(writer.Warnings);
                 tr.End();
                 app.StatusBarText = "Групповая спецификация: листов — " + n;
             }
@@ -255,6 +258,7 @@ namespace GroupSpecB
             if (sectionReport != null && (sectionReport.Contains("Не записано") || sectionReport.Contains("ошибка"))) reports.Add(sectionReport);
             if (bomReport != null && bomReport.Contains("\r\n") || bomReport != null && bomReport.Contains("ошибка")) reports.Add(bomReport);
             if (titleReport != null) reports.Add(titleReport);
+            if (layoutWarnings.Count > 0) reports.Add(string.Join("\r\n", layoutWarnings));
             if (reports.Count > 0)
                 MessageBox.Show(owner, string.Join("\r\n\r\n", reports), Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
             else if (bomReport != null) try { app.StatusBarText = bomReport; } catch { }

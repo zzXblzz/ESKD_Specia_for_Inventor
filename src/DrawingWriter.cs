@@ -31,6 +31,9 @@ namespace GroupSpecB
         /// <summary>Удалять пустые листы (нужно только для чертежа, созданного надстройкой).</summary>
         public bool RemoveEmptySheets;
 
+        /// <summary>Предупреждения вёрстки после Write (например, запись длиннее листа).</summary>
+        public readonly List<string> Warnings = new List<string>();
+
         public DrawingWriter(Application app, DrawingDocument dwg, SpecData data)
         {
             this.app = app; this.dwg = dwg; this.data = data;
@@ -85,7 +88,8 @@ namespace GroupSpecB
         /// прочие листы чертежа (кроме пустого листа нового чертежа) не трогаются.</summary>
         public int Write(Action<string> progress)
         {
-            List<SpecPage> pages = Layout.Build(data);
+            Warnings.Clear();
+            List<SpecPage> pages = Layout.Build(data, Warnings);
             List<Sheet> old = new List<Sheet>();
             List<Sheet> emptyForeign = new List<Sheet>();
             foreach (Sheet sh in dwg.Sheets)
