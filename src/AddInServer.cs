@@ -8,7 +8,7 @@ using Color = System.Drawing.Color;
 
 namespace GroupSpecB
 {
-    /// <summary>Надстройка-компаньон к ESKD Specia: групповая спецификация по ГОСТ 2.113-75, вариант Б.</summary>
+    /// <summary>Надстройка-компаньон к ESKD Specia: спецификация по ГОСТ 2.106 и групповая по ГОСТ 2.113-75, вариант Б.</summary>
     [Guid("6B3C2E1A-8F4D-4C9B-A7E2-3D51B0C4F7A9")]
     [ComVisible(true)]
     public class AddInServer : ApplicationAddInServer
@@ -25,9 +25,9 @@ namespace GroupSpecB
             object small = IconConverter.ToPicture(MakeIcon(16));
             object large = IconConverter.ToPicture(MakeIcon(32));
             button = app.CommandManager.ControlDefinitions.AddButtonDefinition(
-                "Групповая\nспецификация", "GroupSpecB_Run", CommandTypesEnum.kShapeEditCmdType, ClientId,
-                "Групповая спецификация по ГОСТ 2.113-75, вариант Б (исполнения из BOM параметрической сборки)",
-                "Групповая спецификация (вариант Б)", small, large, ButtonDisplayEnum.kAlwaysDisplayText);
+                "Спецификация", "GroupSpecB_Run", CommandTypesEnum.kShapeEditCmdType, ClientId,
+                "Спецификация по ГОСТ 2.106 (одна 3D-модель) или групповая по ГОСТ 2.113-75, вариант Б (несколько исполнений); тип переключается в редакторе",
+                "Спецификация ГОСТ 2.106 / групповая ГОСТ 2.113", small, large, ButtonDisplayEnum.kAlwaysDisplayText);
             button.OnExecute += OnExecute;
             AddToRibbons();
             appEvents = app.ApplicationEvents;
@@ -121,7 +121,7 @@ namespace GroupSpecB
                     RibbonTab tab = app.UserInterfaceManager.Ribbons[p[0]].RibbonTabs[p[1]];
                     RibbonPanel panel = null;
                     foreach (RibbonPanel rp in tab.RibbonPanels) if (rp.InternalName == "GroupSpecB_Panel") panel = rp;
-                    if (panel == null) panel = tab.RibbonPanels.Add("Групповая СП", "GroupSpecB_Panel", ClientId, "", false);
+                    if (panel == null) panel = tab.RibbonPanels.Add("Спецификация ГОСТ", "GroupSpecB_Panel", ClientId, "", false);
                     bool has = false;
                     foreach (CommandControl c in panel.CommandControls) if (c.InternalName == button.InternalName) has = true;
                     if (!has) panel.CommandControls.AddButton(button, true, true, "", false);
@@ -184,8 +184,8 @@ namespace GroupSpecB
             try { Commands.Run(app); }
             catch (Exception ex)
             {
-                Log.Write("Команда «Групповая спецификация»", ex);
-                MessageBox.Show(ex.Message + "\r\n\r\n" + ex.StackTrace, "Групповая спецификация", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log.Write("Команда «Спецификация»", ex);
+                MessageBox.Show(ex.Message + "\r\n\r\n" + ex.StackTrace, "Спецификация", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
