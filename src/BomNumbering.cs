@@ -29,19 +29,22 @@ namespace GroupSpecB
             }
             List<string> notes = new List<string>();
             List<Target> targets = CollectTargets(app, data, notes);
-            int changedRows = 0, docs = 0;
+            int changedRows = 0, docs = 0, unchanged = 0;
             foreach (Target t in targets)
             {
                 if (progress != null) progress("Перенумерация BOM: " + System.IO.Path.GetFileName(t.Path));
                 try
                 {
-                    int n = RenumberTarget(app, t, posByKey, notes);
+                    bool changed;
+                    int n = RenumberTarget(app, t, posByKey, notes, out changed);
                     changedRows += n;
-                    docs++;
+                    if (changed) docs++; else unchanged++;
                 }
                 catch (Exception ex) { notes.Add(System.IO.Path.GetFileName(t.Path) + ": " + ex.Message); }
             }
-            string rep = "Позиции BOM: перенумеровано сборок — " + docs + ", строк BOM с номером из спецификации — " + changedRows + ".";
+            string rep = "Позиции BOM: перенумеровано сборок — " + docs +
+                         (unchanged > 0 ? ", уже совпадали — " + unchanged : "") +
+                         ", строк BOM с номером из спецификации — " + changedRows + ".";
             if (notes.Count > 0) rep += "\r\n" + string.Join("\r\n", notes);
             return rep;
         }
@@ -104,12 +107,12 @@ namespace GroupSpecB
             return order;
         }
 
-        static int RenumberTarget(Application app, Target t, Dictionary<string, string> posByKey, List<string> notes)
+        static int RenumberTarget(Application app, Target t, Dictionary<string, string> posByKey, List<string> notes, out bool changed)
         {
+            changed = false;
             bool opened;
             AssemblyDocument asm = BomCollector.OpenAssembly(app, t.Path, out opened);
             int numbered = 0;
-            bool changed = false;
             try
             {
                 Document doc = (Document)asm;
