@@ -65,6 +65,18 @@ namespace GroupSpecB
             return GuessBaseDesignation(data.Executions);
         }
 
+        /// <summary>Обозначение специфицируемого изделия: для ГОСТ 2.106 — полное обозначение основного
+        /// исполнения («…-01» тоже), для групповой — базовое обозначение исполнений.</summary>
+        public static string SpecifiedDesignation(SpecData data)
+        {
+            if (data.Is2106)
+            {
+                List<Execution> q = data.QtyExecutions();
+                if (q.Count > 0 && !string.IsNullOrEmpty(q[0].Designation)) return StripDocCode(q[0].Designation);
+            }
+            return BaseDesignation(data);
+        }
+
         public const string AsmDrawingKey = "auto:assembly-drawing";
 
         /// <summary>Номер исполнения по обозначению: основное (без номера) — 0, «-01» — 1 ...;
@@ -240,7 +252,7 @@ namespace GroupSpecB
                 data.Rows.Insert(0, asmRow);
             }
             string spec = !string.IsNullOrEmpty(data.Settings.SpecDesignation)
-                ? StripDocCode(data.Settings.SpecDesignation) : BaseDesignation(data);
+                ? StripDocCode(data.Settings.SpecDesignation) : SpecifiedDesignation(data);
             if (!asmRow.IsEdited("Designation")) asmRow.Designation = spec + "СБ";
             if (!asmRow.IsEdited("Name")) asmRow.Name = "Сборочный чертеж";
             if (!asmRow.IsEdited("Format"))
@@ -377,7 +389,7 @@ namespace GroupSpecB
             foreach (SpecRow r in data.Rows)
             {
                 int p;
-                if (r.Section != Sections.Documentation && !r.Hidden && r.IsEdited("Pos") && int.TryParse(r.Pos, out p)) manual.Add(p);
+                if (r.Section != Sections.Documentation && !r.Hidden && data.InSpec2106(r) && r.IsEdited("Pos") && int.TryParse(r.Pos, out p)) manual.Add(p);
             }
             int next = 0;
             string lastSection = null;
@@ -386,6 +398,7 @@ namespace GroupSpecB
             {
                 if (r.Section == Sections.Documentation) { r.Pos = ""; continue; }
                 if (r.Hidden) { r.Pos = ""; continue; }
+                if (!data.InSpec2106(r)) { if (!r.IsEdited("Pos")) r.Pos = ""; continue; }   // только в других исполнениях
                 // новый раздел начинается с пропуском номеров — резерв в конце предыдущего раздела
                 if (lastSection != null && r.Section != lastSection) next += reserve;
                 lastSection = r.Section;

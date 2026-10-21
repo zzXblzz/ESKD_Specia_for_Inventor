@@ -105,11 +105,13 @@ namespace GroupSpecB
         }
     }
 
-    /// <summary>Команда «Групповая спецификация»: из параметрической сборки создаёт чертёж со спецификацией,
-    /// из чертежа — строит спецификацию по исполнениям, показанным в его видах, и выводит её в этот чертёж.</summary>
+    /// <summary>Команда «Спецификация»: из параметрической сборки создаёт чертёж со спецификацией,
+    /// из чертежа — строит спецификацию по исполнениям, показанным в его видах, и выводит её в этот чертёж.
+    /// Одна 3D-модель — спецификация по ГОСТ 2.106 (формы 1, 1а), несколько — групповая по ГОСТ 2.113;
+    /// тип можно переключить в редакторе.</summary>
     public static class Commands
     {
-        const string Title = "Групповая спецификация";
+        const string Title = "Спецификация";
 
         public static void Run(Application app)
         {
@@ -221,7 +223,7 @@ namespace GroupSpecB
             catch (Exception ex) { titleReport = "Основная надпись: " + ex.Message; }
             List<string> layoutWarnings = new List<string>();
             bool screen = app.ScreenUpdating;
-            Transaction tr = app.TransactionManager.StartTransaction((_Document)dwg, "Групповая спецификация");
+            Transaction tr = app.TransactionManager.StartTransaction((_Document)dwg, "Спецификация");
             try
             {
                 app.ScreenUpdating = false;
@@ -229,7 +231,7 @@ namespace GroupSpecB
                 int n = writer.Write(s => { try { app.StatusBarText = s; } catch { } });
                 layoutWarnings.AddRange(writer.Warnings);
                 tr.End();
-                app.StatusBarText = "Групповая спецификация: листов — " + n;
+                app.StatusBarText = SpecTypes.Title(data.EffectiveType()) + ": листов — " + n;
             }
             catch (Exception ex)
             {

@@ -34,6 +34,8 @@ static class UnitTests
         Run("Больше 10 исполнений", Decades);
         Run("Перенос по замеру текста", WrapMeasured);
         Run("Свойства материала в чертеже", Material);
+        Run("Тип спецификации по числу 3D-моделей", SpecTypeAuto);
+        Run("Спецификация по ГОСТ 2.106", Gost2106);
         Console.WriteLine("Пройдено: " + passed + ", ошибок: " + failed);
         return failed == 0 ? 0 : 1;
     }
@@ -147,6 +149,7 @@ static class UnitTests
             Item("d2", "АБВГ.300000.001-01", "Скоба", Sections.Parts, "1"),
             Item("d3", "ГОСТ 1050-88", "Пруток", Sections.Parts, "1"),
             Item("d4", "ГОСТ 1050-89", "Пруток", Sections.Parts, "1")));
+        data.SpecType = SpecTypes.Gost2113;   // одна модель — по умолчанию ГОСТ 2.106, где «-01» не сокращается
         List<SpecLine> lines = DataLines(Layout.Build(data));
         SpecLine l2 = lines.Find(l => l.FirstOfRow && l.Row.Key == "d2");
         Eq("-01", l2.Designation, "исполнение той же детали подряд — «-01»");
@@ -161,6 +164,7 @@ static class UnitTests
         StringBuilder name = new StringBuilder();
         for (int i = 1; i <= 25; i++) name.Append(i == 1 ? "" : "$").Append("строка " + i);
         SpecData data = Merge(Bom(e, Item("long", "АБВГ.400000.001", name.ToString(), Sections.Parts, "1")));
+        data.SpecType = SpecTypes.Gost2113;   // 16 строк на первом листе формы 1б
         List<string> warnings = new List<string>();
         List<SpecPage> pages = Layout.Build(data, warnings);
         Check(pages.Count >= 2, "запись длиннее листа продолжается на следующем листе");
@@ -223,5 +227,56 @@ static class UnitTests
         Check(MaterialLogic.IsManual("См. чертёж"), "«см. …» — задано вручную");
         Check(!MaterialLogic.IsManual("Сталь 45"), "материал — не вручную");
         Check(!MaterialLogic.IsManual(""), "пусто — не вручную");
+    }
+
+    static void SpecTypeAuto()
+    {
+        Execution main = Exec("АБВГ.100000.001"), e2 = Exec("АБВГ.100000.001-02");
+        SpecData one = Merge(Bom(main, Item("x", "АБВГ.1.1", "Деталь", Sections.Parts, "1")));
+        Eq(SpecTypes.Gost2106, one.EffectiveType(), "одна 3D-модель — ГОСТ 2.106");
+        SpecData two = Merge(Bom(main, Item("x", "АБВГ.1.1", "Деталь", Sections.Parts, "1")),
+                             Bom(e2, Item("x", "АБВГ.1.1", "Деталь", Sections.Parts, "2")));
+        Eq(SpecTypes.Gost2113, two.EffectiveType(), "несколько 3D-моделей — ГОСТ 2.113");
+        two.SpecType = SpecTypes.Gost2106;
+        Eq(SpecTypes.Gost2106, two.EffectiveType(), "ручное переключение");
+
+        Eq(SpecTypes.Auto, SpecData.FromXml(one.ToXml()).SpecType, "новая спецификация сохраняется с типом «по числу моделей»");
+        string legacy = one.ToXml().Replace("<SpecType />", "");
+        Check(!legacy.Contains("SpecType"), "данные без SpecType (сохранены до ГОСТ 2.106)");
+        Eq(SpecTypes.Gost2113, SpecData.FromXml(legacy).SpecType, "старые данные — групповая спецификация");
+    }
+
+    static void Gost2106()
+    {
+        Execution main = Exec("АБВГ.100000.001-01"), e2 = Exec("АБВГ.100000.001-02");
+        SpecData data = Merge(
+            Bom(main, Item("d1", "АБВГ.300000.001", "Скоба", Sections.Parts, "2"),
+                      Item("d2", "АБВГ.300000.001-01", "Скоба", Sections.Parts, "1")),
+            Bom(e2, Item("d3", "АБВГ.300000.002", "Только в -02", Sections.Parts, "1")));
+        data.SpecType = SpecTypes.Gost2106;
+        data.Settings.AddAssemblyDrawing = true;
+        SpecLogic.EnsureAssemblyDrawingRow(data);
+        SpecLogic.Renumber(data);
+        Eq("1", data.Rows.Find(r => r.Key == "d1").Pos, "позиции подряд: первая");
+        Eq("2", data.Rows.Find(r => r.Key == "d2").Pos, "позиции подряд: вторая");
+        Eq("", data.Rows.Find(r => r.Key == "d3").Pos, "строка только другого исполнения без позиции");
+        SpecRow asm = data.Rows.Find(r => r.Key == SpecLogic.AsmDrawingKey);
+        Eq("АБВГ.100000.001-01СБ", asm.Designation, "сборочный чертёж — полное обозначение изделия");
+
+        List<SpecPage> pages = Layout.Build(data);
+        Check(pages.TrueForAll(p => p.Gost2106), "листы ГОСТ 2.106");
+        Eq(29, Layout.Capacity(pages[0], data.Settings), "строк на первом листе (форма 1)");
+        Eq(1, pages[0].Execs.Count, "одна графа «Кол.»");
+        List<SpecLine> lines = DataLines(pages);
+        Check(!lines.Exists(l => l.Row != null && l.Row.Key == "d3"), "строка только другого исполнения не входит");
+        SpecLine d1 = lines.Find(l => l.FirstOfRow && l.Row.Key == "d1");
+        Eq("2", d1.Qty[0], "количество основного исполнения");
+        SpecLine d2 = lines.Find(l => l.FirstOfRow && l.Row.Key == "d2");
+        Eq("АБВГ.300000.001-01", d2.Designation, "обозначение не сокращается до «-01»");
+        SpecLine doc = lines.Find(l => l.FirstOfRow && l.Row.Key == SpecLogic.AsmDrawingKey);
+        Check(string.IsNullOrEmpty(doc.Qty[0]), "у документа графа «Кол.» пуста");
+
+        SpecPage next = new SpecPage { Number = 2, Gost2106 = true };
+        Eq(32, Layout.Capacity(next, data.Settings), "строк на последующих листах (форма 1а)");
     }
 }

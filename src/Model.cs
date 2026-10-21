@@ -51,6 +51,19 @@ namespace GroupSpecB
         }
     }
 
+    /// <summary>Тип спецификации: по ГОСТ 2.106 (формы 1 и 1а, одно изделие) или групповая по ГОСТ 2.113 (вариант Б).</summary>
+    public static class SpecTypes
+    {
+        public const string Auto = "";          // по числу 3D-моделей: одна — ГОСТ 2.106, несколько — ГОСТ 2.113
+        public const string Gost2106 = "2.106";
+        public const string Gost2113 = "2.113";
+
+        public static string Title(string type)
+        {
+            return type == Gost2106 ? "Спецификация (ГОСТ 2.106, формы 1 и 1а)" : "Групповая спецификация (ГОСТ 2.113-75, вариант Б)";
+        }
+    }
+
     public static class RowSource
     {
         public const string Bom = "BOM";
@@ -185,8 +198,10 @@ namespace GroupSpecB
         [Browsable(false)] public string FirstUse { get; set; }
         [Browsable(false)] public string RefNo { get; set; }
 
-        [Category("3. Вёрстка"), DisplayName("Строк на первом листе (форма 1б)")] public int RowsFirst { get; set; }
-        [Category("3. Вёрстка"), DisplayName("Строк на последующих листах (форма 1а)")] public int RowsNext { get; set; }
+        [Category("3. Вёрстка"), DisplayName("ГОСТ 2.113: строк на первом листе (форма 1б)")] public int RowsFirst { get; set; }
+        [Category("3. Вёрстка"), DisplayName("ГОСТ 2.113: строк на последующих листах (форма 1а)")] public int RowsNext { get; set; }
+        [Category("3. Вёрстка"), DisplayName("ГОСТ 2.106: строк на первом листе (форма 1)")] public int RowsFirst2106 { get; set; }
+        [Category("3. Вёрстка"), DisplayName("ГОСТ 2.106: строк на последующих листах (форма 1а)")] public int RowsNext2106 { get; set; }
         [Category("3. Вёрстка"), DisplayName("Высота шрифта, мм")] public double FontHeight { get; set; }
         [Category("3. Вёрстка"), DisplayName("Шрифт")] public string FontName { get; set; }
         [Category("3. Вёрстка"), DisplayName("Наклонный шрифт")] public bool Italic { get; set; }
@@ -247,6 +262,8 @@ namespace GroupSpecB
             AbbreviateExecutions = true;
             RowsFirst = 16;
             RowsNext = 19;
+            RowsFirst2106 = 29;
+            RowsNext2106 = 32;
             FontHeight = 3.5;
             FontName = "GOST Common";
             Italic = true;
@@ -263,9 +280,12 @@ namespace GroupSpecB
         }
     }
 
-    /// <summary>Полное состояние групповой спецификации. Хранится в атрибутах чертежа.</summary>
+    /// <summary>Полное состояние спецификации. Хранится в атрибутах чертежа.</summary>
     public class SpecData
     {
+        // Тип спецификации, выбранный вручную (SpecTypes); пусто — по числу 3D-моделей. null — данные, сохранённые
+        // до появления ГОСТ 2.106: в них групповая спецификация (FromXml).
+        public string SpecType;
         public string SourcePath = "";
         public string SourceKind = "";   // iAssembly / ModelStates / Single
         public bool ManualOrder;         // порядок строк задан пользователем — при обновлении не пересортировывать
@@ -283,8 +303,39 @@ namespace GroupSpecB
             return r;
         }
 
+        /// <summary>Действующий тип спецификации: выбранный вручную, иначе по числу 3D-моделей (исполнений):
+        /// одна — ГОСТ 2.106, несколько — групповая по ГОСТ 2.113.</summary>
+        public string EffectiveType()
+        {
+            if (SpecType == SpecTypes.Gost2106 || SpecType == SpecTypes.Gost2113) return SpecType;
+            return Executions.Count > 1 ? SpecTypes.Gost2113 : SpecTypes.Gost2106;
+        }
+
+        [XmlIgnore] public bool Is2106 { get { return EffectiveType() == SpecTypes.Gost2106; } }
+
+        /// <summary>Исполнения в графах «Кол.»: для ГОСТ 2.106 — одна графа основного (первого включённого)
+        /// исполнения, для ГОСТ 2.113 — все включённые.</summary>
+        public List<Execution> QtyExecutions()
+        {
+            List<Execution> r = EnabledExecutions();
+            if (Is2106 && r.Count > 1) r.RemoveRange(1, r.Count - 1);
+            return r;
+        }
+
+        /// <summary>Входит ли строка в спецификацию по ГОСТ 2.106: применяется в основном исполнении или не имеет
+        /// количества ни в одном исполнении (документ, свободная запись). В групповую входят все строки.</summary>
+        public bool InSpec2106(SpecRow r)
+        {
+            if (!Is2106) return true;
+            List<Execution> q = QtyExecutions();
+            if (q.Count > 0 && r.GetQty(q[0].Key) != "") return true;
+            foreach (Execution e in EnabledExecutions()) if (r.GetQty(e.Key) != "") return false;
+            return true;
+        }
+
         public string ToXml()
         {
+            if (SpecType == null) SpecType = SpecTypes.Auto;   // новая спецификация: тип по числу 3D-моделей
             XmlSerializer xs = new XmlSerializer(typeof(SpecData));
             using (StringWriter sw = new StringWriter())
             {
@@ -298,7 +349,9 @@ namespace GroupSpecB
             XmlSerializer xs = new XmlSerializer(typeof(SpecData));
             using (StringReader sr = new StringReader(xml))
             {
-                return (SpecData)xs.Deserialize(sr);
+                SpecData d = (SpecData)xs.Deserialize(sr);
+                if (d.SpecType == null) d.SpecType = SpecTypes.Gost2113;   // сохранено до ГОСТ 2.106 — групповая
+                return d;
             }
         }
     }

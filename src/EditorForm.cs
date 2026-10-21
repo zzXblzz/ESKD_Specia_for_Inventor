@@ -36,7 +36,16 @@ namespace GroupSpecB
         PropertyGrid props;
         ToolStripStatusLabel status;
         CheckBox showHidden;
+        ToolStripComboBox typeBox;
         bool loading;
+
+        static readonly string[] TypeValues = { SpecTypes.Auto, SpecTypes.Gost2106, SpecTypes.Gost2113 };
+        static readonly string[] TypeItems =
+        {
+            "По числу 3D-моделей",
+            "ГОСТ 2.106 (формы 1, 1а)",
+            "ГОСТ 2.113 (групповая)",
+        };
 
         static readonly string[] FieldCols = { "Section", "Format", "Zone", "Pos", "Designation", "Name" };
 
@@ -45,8 +54,8 @@ namespace GroupSpecB
             this.data = data;
             this.refresh = refresh;
             this.titleState = titleState ?? new TitleState();
-            Text = "Групповая спецификация (ГОСТ 2.113-75, вариант Б)";
-            Width = 1350; Height = 780;
+            Text = SpecTypes.Title(data.EffectiveType());
+            Width = 1400; Height = 780;
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 9f);
             BuildUi();
@@ -59,6 +68,14 @@ namespace GroupSpecB
         {
             ToolStrip ts = new ToolStrip();
             ts.GripStyle = ToolStripGripStyle.Hidden;
+            ts.Items.Add(new ToolStripLabel("Тип:"));
+            typeBox = new ToolStripComboBox { DropDownStyle = ComboBoxStyle.DropDownList, AutoSize = false, Width = 190,
+                ToolTipText = "По умолчанию: одна 3D-модель — спецификация по ГОСТ 2.106, несколько — групповая по ГОСТ 2.113" };
+            typeBox.Items.AddRange(TypeItems);
+            typeBox.SelectedIndex = Math.Max(0, Array.IndexOf(TypeValues, data.SpecType ?? SpecTypes.Auto));
+            typeBox.SelectedIndexChanged += OnTypeChanged;
+            ts.Items.Add(typeBox);
+            ts.Items.Add(new ToolStripSeparator());
             ts.Items.Add(Btn("Обновить из BOM", "Перечитать исполнения и BOM параметрической сборки (ручные правки сохраняются)", OnRefresh));
             ts.Items.Add(new ToolStripSeparator());
             ts.Items.Add(Btn("Добавить исполнение (3D-модель)…", "Добавить в групповую спецификацию ещё одно исполнение — сборку (.iam); её BOM станет отдельной графой «Кол. на исполн.»", OnAddExecution));
@@ -75,6 +92,7 @@ namespace GroupSpecB
             ToolStripButton ok = Btn("Сформировать спецификацию", "Вывести листы на чертёж", (s, e) => { Commit(); DialogResult = DialogResult.OK; Close(); });
             ok.Font = new Font(ok.Font, FontStyle.Bold);
             ok.Alignment = ToolStripItemAlignment.Right;
+            ok.Overflow = ToolStripItemOverflow.Never;   // в узком окне в меню переполнения уходят остальные кнопки
             ts.Items.Add(ok);
 
             TabControl tabs = new TabControl { Dock = DockStyle.Fill };
@@ -220,6 +238,7 @@ namespace GroupSpecB
 
         void LoadAll()
         {
+            Text = SpecTypes.Title(data.EffectiveType());   // тип «по числу 3D-моделей» меняется при добавлении исполнений
             FillExecGrid();
             props.SelectedObject = data.Settings;
             FillGrid();
@@ -251,9 +270,9 @@ namespace GroupSpecB
             grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Pos", HeaderText = "Поз.", Width = 40 });
             grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Designation", HeaderText = "Обозначение", Width = 210 });
             grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Name", HeaderText = "Наименование", Width = 220 });
-            foreach (Execution e in data.EnabledExecutions())
+            foreach (Execution e in data.QtyExecutions())
             {
-                DataGridViewTextBoxColumn c = new DataGridViewTextBoxColumn { Name = "Q:" + e.Key, HeaderText = e.Label, Width = 42,
+                DataGridViewTextBoxColumn c = new DataGridViewTextBoxColumn { Name = "Q:" + e.Key, HeaderText = data.Is2106 ? "Кол." : e.Label, Width = 42,
                     ToolTipText = e.Designation + " (" + e.Key + ")" };
                 c.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
                 c.SortMode = DataGridViewColumnSortMode.NotSortable;
@@ -322,7 +341,7 @@ namespace GroupSpecB
             gr.Cells["Designation"].Value = r.Designation;
             gr.Cells["Name"].Value = r.Name;
             gr.Cells["Note"].Value = r.Note;
-            foreach (Execution e in data.EnabledExecutions()) gr.Cells["Q:" + e.Key].Value = r.GetQty(e.Key);
+            foreach (Execution e in data.QtyExecutions()) gr.Cells["Q:" + e.Key].Value = r.GetQty(e.Key);
             Color back = r.Source == RowSource.Bom ? Color.White : r.Source == RowSource.Model ? Color.FromArgb(225, 240, 255) : Color.FromArgb(255, 250, 215);
             if (r.Hidden) back = Color.Gainsboro;
             gr.DefaultCellStyle.BackColor = back;
@@ -340,7 +359,8 @@ namespace GroupSpecB
             List<SpecPage> pages = GroupSpecB.Layout.Build(data, layoutWarnings);
             SetStatus("Исполнений: " + data.EnabledExecutions().Count + " из " + data.Executions.Count +
                       "   Строк в спецификации: " + n + "   Листов: " + pages.Count +
-                      "   Базовое обозначение: " + SpecLogic.BaseDesignation(data) +
+                      (data.Is2106 ? "   Обозначение: " + SpecLogic.SpecifiedDesignation(data)
+                                   : "   Базовое обозначение: " + SpecLogic.BaseDesignation(data)) +
                       (data.SourcePath != "" ? "   Источник: " + data.SourcePath : "") +
                       (SpecLogic.DuplicatePositions(data).Count > 0 ? "   ВНИМАНИЕ: повторяются позиции " + string.Join(", ", SpecLogic.DuplicatePositions(data)) : "") +
                       (layoutWarnings.Count > 0 ? "   ВНИМАНИЕ: " + layoutWarnings[0] : ""));
@@ -560,13 +580,30 @@ namespace GroupSpecB
                 "Количество (для документов — X) во всех включённых исполнениях.\r\nПустое значение очищает графы.",
                 "Количество на исполнение", def);
             foreach (SpecRow r in sel)
-                foreach (Execution ex in data.EnabledExecutions())
+                foreach (Execution ex in data.QtyExecutions())
                 {
                     r.SetQty(ex.Key, v.Trim());
                     r.MarkEdited("Qty:" + ex.Key);
                 }
             FillGrid();
             SelectSpecRows(sel);
+        }
+
+        /// <summary>Ручное переключение типа спецификации (ГОСТ 2.106 / 2.113). Строки и правки общие:
+        /// меняются только графы количества, вёрстка листов и обозначение в строке «Сборочный чертеж».</summary>
+        void OnTypeChanged(object sender, EventArgs e)
+        {
+            Commit();
+            data.SpecType = TypeValues[Math.Max(0, typeBox.SelectedIndex)];
+            UpdateTypeView();
+        }
+
+        void UpdateTypeView()
+        {
+            Text = SpecTypes.Title(data.EffectiveType());
+            SpecLogic.EnsureAssemblyDrawingRow(data);
+            SpecLogic.Renumber(data);   // в ГОСТ 2.106 строки только других исполнений не нумеруются
+            FillGrid();
         }
 
         void OnSort(object sender, EventArgs e)

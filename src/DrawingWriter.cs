@@ -5,21 +5,27 @@ using Inventor;
 
 namespace GroupSpecB
 {
-    /// <summary>Вывод групповой спецификации по варианту Б на листы чертежа:
-    /// первый лист — форма 1б, последующие — форма 1а ГОСТ 2.113-75 (А4, альбомная ориентация).</summary>
+    /// <summary>Вывод спецификации на листы чертежа.
+    /// Групповая по варианту Б: первый лист — форма 1б, последующие — форма 1а ГОСТ 2.113-75 (А4, альбомная ориентация).
+    /// По ГОСТ 2.106: первый лист — форма 1, последующие — форма 1а (А4, книжная ориентация).</summary>
     public class DrawingWriter
     {
         public const string AttrSet = "GroupSpecB";
         public const string AttrData = "Data";
         public const string SheetAttrSet = "GroupSpecB_Sheet";
         public const string SheetPrefix = "ГС";
+        public const string SheetPrefix2106 = "СП";
 
-        // Рамка: поле подшивки сверху 20 мм, остальные 5 мм (формы 1а/1б).
-        const double FL = 5, FR = 292, FB = 5, FT = 190;
+        // Рамка групповой: поле подшивки сверху 20 мм, остальные 5 мм (формы 1а/1б);
+        // ГОСТ 2.106 (А4 книжный): поле подшивки слева 20 мм.
+        readonly double FL = 5, FR = 292, FB = 5, FT = 190;
         // Границы граф таблицы, мм.
         static readonly double[] ColX = { 5, 11, 17, 25, 95, 158, 258, 292 };
         const double QtyX0 = 158, QtyW = 10;
         const double HeadTop = 190, HeadMid = 183, HeadBottom = 175, RowH = 8;
+        // Форма 1 / 1а ГОСТ 2.106: графы 6 / 6 / 8 / 70 / 63 / 10 / 22 мм, головка 15 мм.
+        static readonly double[] ColX2106 = { 20, 26, 32, 40, 110, 173, 183, 205 };
+        const double Head2106Top = 292, Head2106Bottom = 277;
         const double Thick = 0.05, Thin = 0.025;   // толщина линий, см
 
         readonly Application app;
@@ -38,7 +44,11 @@ namespace GroupSpecB
         {
             this.app = app; this.dwg = dwg; this.data = data;
             tg = app.TransientGeometry;
+            gost2106 = data.Is2106;
+            if (gost2106) { FL = 20; FR = 205; FB = 5; FT = 292; }
         }
+
+        readonly bool gost2106;
 
         public static DrawingDocument CreateDrawing(Application app)
         {
@@ -109,7 +119,8 @@ namespace GroupSpecB
             {
                 if (progress != null) progress("Лист " + (i + 1) + (pages != null ? " из " + pages.Count : ""));
                 Sheet sh = dwg.Sheets.Add(DrawingSheetSizeEnum.kA4DrawingSheetSize,
-                    PageOrientationTypeEnum.kLandscapePageOrientation, SheetPrefix + "-" + (i + 1), Type.Missing, Type.Missing);
+                    gost2106 ? PageOrientationTypeEnum.kPortraitPageOrientation : PageOrientationTypeEnum.kLandscapePageOrientation,
+                    (gost2106 ? SheetPrefix2106 : SheetPrefix) + "-" + (i + 1), Type.Missing, Type.Missing);
                 sh.AttributeSets.Add(SheetAttrSet);
                 // листы спецификации — отдельный документ со своей нумерацией: в счёт листов чертежа не входят
                 try { sh.ExcludeFromCount = true; } catch { }
@@ -119,7 +130,7 @@ namespace GroupSpecB
                 try { if (sh.TitleBlock != null) sh.TitleBlock.Delete(); } catch { }
                 try { if (sh.Border != null) sh.Border.Delete(); } catch { }
                 sk = sh.Sketches.Add();
-                sk.Name = "Групповая спецификация";
+                sk.Name = gost2106 ? "Спецификация" : "Групповая спецификация";
                 sk.Edit();
                 sk.DeferUpdates = true;
                 try
@@ -342,6 +353,7 @@ namespace GroupSpecB
 
         void DrawPage(SpecPage page, int totalSheets, List<string> decadeNote)
         {
+            if (gost2106) { DrawPage2106(page, totalSheets); return; }
             SpecSettings s = data.Settings;
             double h = s.FontHeight;
             int cap = Layout.Capacity(page, s);
@@ -403,6 +415,97 @@ namespace GroupSpecB
                     Text(FL + 2, y - 3, 105, y + 3, t, 'L', 3.5);
                     y -= 7;
                 }
+            }
+        }
+
+        /// <summary>Лист спецификации по ГОСТ 2.106: форма 1 (первый лист, основная надпись форма 2) или
+        /// форма 1а (последующие, форма 2а). Таблица доходит до основной надписи: остаток меньше строки
+        /// входит в последнюю строку.</summary>
+        void DrawPage2106(SpecPage page, int totalSheets)
+        {
+            double h = data.Settings.FontHeight;
+            double[] cx = ColX2106;
+            int cap = Layout.Capacity(page, data.Settings);
+            double titleTop = FB + (page.First ? 40 : 15);
+            double yb = Head2106Bottom - RowH * cap;
+            if (yb < titleTop + RowH) yb = titleTop;
+
+            Rect(FL, FB, FR, FT, true);
+            DrawExtraGraphs2106(page.First);
+
+            // --- головка таблицы
+            Line(FL, Head2106Bottom, FR, Head2106Bottom, true);
+            Line(FL, yb, FR, yb, true);
+            for (int c = 1; c < cx.Length - 1; c++) Line(cx[c], Head2106Top, cx[c], yb, true);
+            double hy = (Head2106Top + Head2106Bottom) / 2;
+            TextVertical((cx[0] + cx[1]) / 2, hy, "Формат", 2.5);
+            TextVertical((cx[1] + cx[2]) / 2, hy, "Зона", 2.5);
+            TextVertical((cx[2] + cx[3]) / 2, hy, "Поз.", 2.5);
+            Text(cx[3], Head2106Bottom, cx[4], Head2106Top, "Обозначение", 'C', h);
+            Text(cx[4], Head2106Bottom, cx[5], Head2106Top, "Наименование", 'C', h);
+            TextVertical((cx[5] + cx[6]) / 2, hy, "Кол.", h);
+            Text(cx[6], hy, cx[7], Head2106Top, "Приме-", 'C', h);   // в графу 22 мм — в две строки
+            Text(cx[6], Head2106Bottom, cx[7], hy, "чание", 'C', h);
+
+            // --- строки
+            for (int r = 1; r < cap; r++)
+            {
+                double y = Head2106Bottom - r * RowH;
+                if (y > yb + 0.01) Line(FL, y, FR, y, false);
+            }
+            for (int i = 0; i < page.Lines.Count && i < cap; i++)
+            {
+                SpecLine l = page.Lines[i];
+                double y2 = Head2106Bottom - i * RowH, y1 = Math.Max(y2 - RowH, yb);
+                if (l.Kind == LineKind.Blank) continue;
+                if (l.Kind == LineKind.Header)
+                {
+                    Text(cx[4], y1, cx[5], y2, l.Name, 'C', h, true);
+                    continue;
+                }
+                Text(cx[0], y1, cx[1], y2, l.Format, 'C', Math.Min(h, 2.5));
+                Text(cx[1], y1, cx[2], y2, l.Zone, 'C', Math.Min(h, 2.5));
+                Text(cx[2], y1, cx[3], y2, l.Pos, 'C', h);
+                Text(cx[3], y1, cx[4], y2, l.Designation, 'L', h);
+                Text(cx[4], y1, cx[5], y2, l.Name, 'L', h);
+                Text(cx[5], y1, cx[6], y2, l.Qty[0], 'C', h);
+                Text(cx[6], y1, cx[7], y2, l.Note, 'L', h);
+            }
+
+            // --- основная надпись
+            if (page.First) TitleBlockForm2(page, totalSheets);
+            else TitleBlockForm2a(page);
+        }
+
+        /// <summary>Дополнительные графы по ГОСТ 2.104 в поле подшивки слева (А4 книжный): снизу — «Инв. № подл.»,
+        /// «Подп. и дата», «Взам. инв. №», «Инв. № дубл.», «Подп. и дата»; на первом листе сверху — «Перв. примен.»
+        /// и «Справ. №». Графы 5 мм (подпись) + 7 мм (значение).</summary>
+        void DrawExtraGraphs2106(bool first)
+        {
+            double x0 = FL - 12, xm = FL - 7;
+            double[] hs = { 25, 35, 25, 25, 35 };
+            string[] labels = { "Инв. № подл.", "Подп. и дата", "Взам. инв. №", "Инв. № дубл.", "Подп. и дата" };
+            double y = FB;
+            Rect(x0, FB, FL, FB + 145, true);
+            Line(xm, FB, xm, FB + 145, true);
+            for (int i = 0; i < hs.Length; i++)
+            {
+                if (i > 0) Line(x0, y, FL, y, true);
+                TextVertical((x0 + xm) / 2, y + hs[i] / 2, labels[i], 2.5);
+                y += hs[i];
+            }
+            if (!string.IsNullOrEmpty(data.InvNo)) TextVertical((xm + FL) / 2, FB + 12.5, data.InvNo, 3.5);
+
+            if (first)
+            {
+                double yt = FT, ymid = FT - 60, ybot = FT - 120;
+                Rect(x0, ybot, FL, yt, true);
+                Line(x0, ymid, FL, ymid, true);
+                Line(xm, ybot, xm, yt, true);
+                TextVertical((x0 + xm) / 2, (ymid + yt) / 2, "Перв. примен.", 2.5);
+                TextVertical((x0 + xm) / 2, (ybot + ymid) / 2, "Справ. №", 2.5);
+                if (!string.IsNullOrEmpty(data.FirstUse)) TextVertical((xm + FL) / 2, (ymid + yt) / 2, data.FirstUse, 3.5);
+                if (!string.IsNullOrEmpty(data.RefNo)) TextVertical((xm + FL) / 2, (ybot + ymid) / 2, data.RefNo, 3.5);
             }
         }
 

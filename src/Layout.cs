@@ -24,14 +24,15 @@ namespace GroupSpecB
         public int Decade;               // десяток исполнений: 0 — исполнения 1..10, 1 — 11..20 ...
         public List<Execution> Execs = new List<Execution>(); // исполнения в графах этого листа (до 10)
         public List<SpecLine> Lines = new List<SpecLine>();
+        public bool Gost2106;            // лист спецификации по ГОСТ 2.106 (формы 1 / 1а), иначе групповой (1б / 1а)
         public bool First { get { return Number == 1; } }
     }
 
     /// <summary>Вёрстка: перенос текста по строкам, разделы, разбиение на листы и десятки исполнений.</summary>
     public static class Layout
     {
-        // ширины граф по ГОСТ 2.113 формы 1а/1б, мм
-        public const double WDesignation = 70, WName = 63, WNote = 34;
+        // ширины граф по ГОСТ 2.113 формы 1а/1б, мм; у ГОСТ 2.106 формы 1/1а примечание — 22 мм
+        public const double WDesignation = 70, WName = 63, WNote = 34, WNote2106 = 22;
 
         /// <summary>Разбивка текста графы на строки.
         /// Если в тексте есть «$» (или перевод строки) — это границы строк, задаваемые пользователем:
@@ -104,11 +105,11 @@ namespace GroupSpecB
         {
             return text != null && (text.IndexOf('$') >= 0 || text.IndexOf('\n') >= 0);
         }
-        static List<SpecLine> RowLines(SpecRow r, List<Execution> execs, SpecSettings s, Func<string, double> measure)
+        static List<SpecLine> RowLines(SpecRow r, List<Execution> execs, SpecSettings s, Func<string, double> measure, bool gost2106)
         {
             List<string> des = Wrap(r.Designation, WDesignation, s, measure);
             List<string> name = Wrap(r.Name, WName, s, measure);
-            List<string> note = Wrap(r.Note, WNote, s, measure);
+            List<string> note = Wrap(r.Note, gost2106 ? WNote2106 : WNote, s, measure);
             int n = Math.Max(des.Count, Math.Max(name.Count, note.Count));
             List<SpecLine> res = new List<SpecLine>();
             for (int i = 0; i < n; i++)
@@ -127,8 +128,10 @@ namespace GroupSpecB
                 l.Note = i < note.Count ? note[i] : "";
                 if (i == 0)
                 {
-                    // количество — в первой строке записи, в одной строке с номером позиции
-                    for (int k = 0; k < execs.Count && k < 10; k++) l.Qty[k] = r.GetQty(execs[k].Key);
+                    // количество — в первой строке записи, в одной строке с номером позиции;
+                    // у документов в спецификации по ГОСТ 2.106 графа «Кол.» не заполняется
+                    if (!(gost2106 && r.Section == Sections.Documentation))
+                        for (int k = 0; k < execs.Count && k < 10; k++) l.Qty[k] = r.GetQty(execs[k].Key);
                 }
                 res.Add(l);
             }
@@ -145,11 +148,14 @@ namespace GroupSpecB
 
         /// <summary>Строит листы спецификации. При числе исполнений больше десяти запись повторяется
         /// для каждого следующего десятка (ГОСТ 2.113 п. 5.5.2 е, ж). Запись, которая длиннее целого листа,
-        /// разрывается между листами (иначе её конец потерялся бы); об этом — строка в warnings.</summary>
+        /// разрывается между листами (иначе её конец потерялся бы); об этом — строка в warnings.
+        /// Спецификация по ГОСТ 2.106 — одна графа «Кол.» основного исполнения: строки, которые применяются
+        /// только в других исполнениях, в неё не входят.</summary>
         public static List<SpecPage> Build(SpecData data, List<string> warnings = null, Func<string, double> measure = null)
         {
             SpecSettings s = data.Settings;
-            List<Execution> all = data.EnabledExecutions();
+            bool gost2106 = data.Is2106;
+            List<Execution> all = data.QtyExecutions();
             List<List<Execution>> decades = new List<List<Execution>>();
             for (int i = 0; i < all.Count; i += 10) decades.Add(all.GetRange(i, Math.Min(10, all.Count - i)));
             if (decades.Count == 0) decades.Add(new List<Execution>());
@@ -165,7 +171,8 @@ namespace GroupSpecB
                     // строка без количества ни в одном исполнении (документ, свободная запись) — на листах
                     // первого десятка, иначе при больше чем 10 исполнениях она пропала бы со всех листов
                     List<SpecRow> rows = data.Rows.FindAll(r => r.Section == section && !r.Hidden &&
-                        (decades.Count == 1 || RowUsedIn(r, execs) || d == 0 && !RowUsedIn(r, all)));
+                        (gost2106 ? data.InSpec2106(r)
+                                  : decades.Count == 1 || RowUsedIn(r, execs) || d == 0 && !RowUsedIn(r, all)));
                     if (rows.Count == 0) continue;
                     bool firstInSection = true;
                     foreach (SpecRow r in rows)
@@ -178,13 +185,13 @@ namespace GroupSpecB
                             block.Add(Blank());
                             firstInSection = false;
                         }
-                        block.AddRange(RowLines(r, execs, s, measure));
+                        block.AddRange(RowLines(r, execs, s, measure, gost2106));
                         blocks.Add(block);
                     }
                     for (int k = 0; k < s.ReserveLines; k++) blocks.Add(new List<SpecLine> { Blank() });
                 }
 
-                SpecPage page = NewPage(pages, d, execs);
+                SpecPage page = NewPage(pages, d, execs, gost2106);
                 foreach (List<SpecLine> block in blocks)
                 {
                     int cap = Capacity(page, s);
@@ -192,7 +199,7 @@ namespace GroupSpecB
                     {
                         // пустые строки в конце блока-резерва на новый лист не переносим
                         if (block.Count == 1 && block[0].Kind == LineKind.Blank) continue;
-                        page = NewPage(pages, d, execs);
+                        page = NewPage(pages, d, execs, gost2106);
                     }
                     // запись не помещается даже на пустой лист — разрываем
                     List<SpecLine> rest = block;
@@ -208,27 +215,29 @@ namespace GroupSpecB
                             warnings.Add("Запись «" + what + "» длиннее листа и разорвана между листами " +
                                          page.Number + " и " + (page.Number + 1) + ". Сократите текст или задайте переносы «$».");
                         }
-                        page = NewPage(pages, d, execs);
+                        page = NewPage(pages, d, execs, gost2106);
                     }
                     page.Lines.AddRange(rest);
                 }
             }
             foreach (SpecPage p in pages)
             {
-                if (s.AbbreviateExecutions) Abbreviate(p);
+                // сокращение «-02» — правило групповой спецификации (ГОСТ 2.113 п. 5.3)
+                if (s.AbbreviateExecutions && !gost2106) Abbreviate(p);
             }
             return pages;
         }
 
-        static SpecPage NewPage(List<SpecPage> pages, int decade, List<Execution> execs)
+        static SpecPage NewPage(List<SpecPage> pages, int decade, List<Execution> execs, bool gost2106)
         {
-            SpecPage p = new SpecPage { Number = pages.Count + 1, Decade = decade, Execs = execs };
+            SpecPage p = new SpecPage { Number = pages.Count + 1, Decade = decade, Execs = execs, Gost2106 = gost2106 };
             pages.Add(p);
             return p;
         }
 
         public static int Capacity(SpecPage p, SpecSettings s)
         {
+            if (p.Gost2106) return p.First ? Math.Max(1, s.RowsFirst2106) : Math.Max(1, s.RowsNext2106);
             return p.First ? Math.Max(1, s.RowsFirst) : Math.Max(1, s.RowsNext);
         }
 
