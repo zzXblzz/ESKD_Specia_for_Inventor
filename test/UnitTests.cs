@@ -36,6 +36,7 @@ static class UnitTests
         Run("Свойства материала в чертеже", Material);
         Run("Тип спецификации по числу 3D-моделей", SpecTypeAuto);
         Run("Спецификация по ГОСТ 2.106", Gost2106);
+        Run("Свободные строки между разделами", Gaps);
         Console.WriteLine("Пройдено: " + passed + ", ошибок: " + failed);
         return failed == 0 ? 0 : 1;
     }
@@ -281,5 +282,40 @@ static class UnitTests
 
         SpecPage next = new SpecPage { Number = 2, Gost2106 = true };
         Eq(32, Layout.Capacity(next, data.Settings), "строк на последующих листах (форма 1а)");
+    }
+
+    static string Kinds(SpecPage p)
+    {
+        StringBuilder sb = new StringBuilder();
+        foreach (SpecLine l in p.Lines) sb.Append(l.Kind == LineKind.Blank ? "_" : l.Kind == LineKind.Header ? "H" : "d");
+        return sb.ToString();
+    }
+
+    static void Gaps()
+    {
+        Execution e = Exec("АБВГ.100000.001");
+        SpecData data = Merge(Bom(e,
+            Item("p1", "АБВГ.200000.001", "Деталь А", Sections.Parts, "1"),
+            Item("s1", "", "Болт М8х20 ГОСТ 7798-70", Sections.Standard, "4")));
+        data.Settings.ReserveLines = 1;
+        Eq("_H_d__H_d_", Kinds(Layout.Build(data)[0]), "по умолчанию: строка до и после заголовка, резерв из параметров");
+
+        data.SetGapLines(Sections.Standard, GapKind.Before, 0);
+        data.SetGapLines(Sections.Parts, GapKind.Reserve, 0);
+        data.SetGapLines(Sections.Parts, GapKind.After, data.GapLines(Sections.Parts, GapKind.After) - 1);
+        Eq("_HdH_d_", Kinds(Layout.Build(data)[0]), "свободные строки удалены в чертеже");
+        Eq(1, data.Settings.ReserveLines, "параметр «Свободных строк после раздела» не меняется");
+
+        data.Settings.ReserveLines = 2;
+        Eq("_HdH_d__", Kinds(Layout.Build(data)[0]), "раздел без правок следует параметрам, с правками — нет");
+
+        SpecData copy = SpecData.FromXml(data.ToXml());
+        Eq(0, copy.GapLines(Sections.Parts, GapKind.After), "правки сохраняются в данных чертежа");
+        Eq(1, copy.GapLines(Sections.Parts, GapKind.Before), "неизменённое — по умолчанию");
+
+        data.ResetGaps(Sections.Parts);
+        Eq("_H_d__H_d__", Kinds(Layout.Build(data)[0]), "возврат по умолчанию для раздела");
+        data.ResetGaps(null);
+        Eq("_H_d___H_d__", Kinds(Layout.Build(data)[0]), "возврат по умолчанию для всех разделов");
     }
 }

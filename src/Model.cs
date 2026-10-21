@@ -168,6 +168,19 @@ namespace GroupSpecB
         }
     }
 
+    /// <summary>Свободные строки раздела на листах: перед заголовком, после заголовка, после раздела.</summary>
+    public enum GapKind { Before, After, Reserve }
+
+    /// <summary>Число свободных строк раздела, заданное в этом чертеже (-1 — по умолчанию: одна строка
+    /// перед заголовком и после него, после раздела — параметр «Свободных строк после раздела»).</summary>
+    public class SectionGap
+    {
+        [XmlAttribute] public string Section;
+        [XmlAttribute] public int Before = -1;
+        [XmlAttribute] public int After = -1;
+        [XmlAttribute] public int Reserve = -1;
+    }
+
     /// <summary>Настройки оформления и данные основной надписи.</summary>
     public class SpecSettings
     {
@@ -294,7 +307,32 @@ namespace GroupSpecB
         public string InvNo = "", FirstUse = "", RefNo = "";   // дополнительные графы: Инв. № подл., Перв. примен., Справ. №
         public List<Execution> Executions = new List<Execution>();
         public List<SpecRow> Rows = new List<SpecRow>();
+        public List<SectionGap> Gaps = new List<SectionGap>();   // свободные строки, удалённые в этом чертеже
         public SpecSettings Settings = new SpecSettings();
+
+        /// <summary>Число свободных строк раздела на листах: заданное в чертеже, иначе по умолчанию.</summary>
+        public int GapLines(string section, GapKind kind)
+        {
+            SectionGap g = Gaps.Find(x => x.Section == section);
+            int n = g == null ? -1 : kind == GapKind.Before ? g.Before : kind == GapKind.After ? g.After : g.Reserve;
+            if (n >= 0) return n;
+            return kind == GapKind.Reserve ? Math.Max(0, Settings.ReserveLines) : 1;
+        }
+
+        /// <summary>Число свободных строк раздела только для этого чертежа (параметры не меняются).</summary>
+        public void SetGapLines(string section, GapKind kind, int n)
+        {
+            SectionGap g = Gaps.Find(x => x.Section == section);
+            if (g == null) Gaps.Add(g = new SectionGap { Section = section });
+            n = Math.Max(0, n);
+            if (kind == GapKind.Before) g.Before = n; else if (kind == GapKind.After) g.After = n; else g.Reserve = n;
+        }
+
+        /// <summary>Свободные строки раздела (null — всех разделов) — снова по умолчанию.</summary>
+        public void ResetGaps(string section)
+        {
+            Gaps.RemoveAll(x => section == null || x.Section == section);
+        }
 
         public List<Execution> EnabledExecutions()
         {

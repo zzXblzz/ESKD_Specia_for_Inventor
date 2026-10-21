@@ -80,7 +80,8 @@ namespace GroupSpecB
             ts.Items.Add(new ToolStripSeparator());
             ts.Items.Add(Btn("Добавить исполнение (3D-модель)…", "Добавить в групповую спецификацию ещё одно исполнение — сборку (.iam); её BOM станет отдельной графой «Кол. на исполн.»", OnAddExecution));
             ts.Items.Add(Btn("Добавить строку", "Пустая строка (документ, материал и т. п.) в разделе выделенной строки", OnAddRow));
-            ts.Items.Add(Btn("Удалить", "Удалить строки, добавленные вручную (строки BOM — снять флажок «В СП»)", OnDelete));
+            ts.Items.Add(Btn("Удалить", "Удалить строки, добавленные вручную (строки BOM — снять флажок «В СП»), и выделенные свободные строки между разделами (только в этом чертеже)", OnDelete));
+            ts.Items.Add(Btn("Вернуть свободные строки", "Свободные строки разделов выделенных строк — снова по умолчанию (одна строка до и после заголовка, после раздела — по параметрам)", OnResetGaps));
             ts.Items.Add(new ToolStripSeparator());
             ts.Items.Add(Btn("▲", "Переместить выше (в пределах раздела)", (s, e) => MoveRows(-1)));
             ts.Items.Add(Btn("▼", "Переместить ниже (в пределах раздела)", (s, e) => MoveRows(1)));
@@ -113,6 +114,14 @@ namespace GroupSpecB
                 if (grid.IsCurrentCellDirty && grid.CurrentCell is DataGridViewCheckBoxCell) grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
             };
             grid.DataError += (s, e) => { e.ThrowException = false; };
+            grid.KeyDown += (s, e) =>
+            {
+                // Delete удаляет свободные строки; записи — только кнопкой «Удалить»
+                if (e.KeyCode != Keys.Delete || grid.IsCurrentCellInEditMode || SelectedRows().Count > 0) return;
+                if (!SelectedMarkers().Exists(m => m.Gap != null)) return;
+                OnDelete(s, e);
+                e.Handled = true;
+            };
             grid.EditingControlShowing += (s, e) =>
             {
                 TextBox tb = e.Control as TextBox;
@@ -120,9 +129,10 @@ namespace GroupSpecB
             };
             showHidden = new CheckBox { Text = "Показывать строки, исключённые из спецификации", Dock = DockStyle.Bottom, Checked = true, Height = 24 };
             showHidden.CheckedChanged += (s, e) => FillGrid();
-            Label hint = new Label { Dock = DockStyle.Bottom, Height = 34, ForeColor = Color.DimGray,
+            Label hint = new Label { Dock = DockStyle.Bottom, Height = 66, ForeColor = Color.DimGray,
                 Text = "Белые строки — из BOM исполнений, жёлтые — добавленные вручную. Жирным — исправлено вручную (не перезаписывается при обновлении из BOM).\r\n" +
-                       "«Документация» — X в графах исполнений. Знак $ в тексте — конец строки (не влезающая строка сжимается). Изменения в 3D-модели (spec_section, обозначение, наименование, позиции BOM) вносятся только по кнопке «Сформировать»." };
+                       "«Документация» — X в графах исполнений. Знак $ в тексте — конец строки (не влезающая строка сжимается). Изменения в 3D-модели (spec_section, обозначение, наименование, позиции BOM) вносятся только по кнопке «Сформировать».\r\n" +
+                       "Серые строки «свободная строка» — пустые строки листа между разделами; удалить — Delete или «Удалить» (только в этом чертеже, параметры не меняются)." };
             tpSpec.Controls.Add(grid);
             tpSpec.Controls.Add(showHidden);
             tpSpec.Controls.Add(hint);
@@ -294,35 +304,56 @@ namespace GroupSpecB
             {
                 List<SpecRow> rows = data.Rows.FindAll(r => r.Section == section && (!r.Hidden || showHidden.Checked));
                 if (rows.Count == 0) continue;
-                AddMarkerRow(section, true);
+                AddGapRows(section, GapKind.Before);
+                AddMarkerRow(section, null);
+                AddGapRows(section, GapKind.After);
                 foreach (SpecRow r in rows) AddSpecRow(r, bold);
-                int blanks = Math.Max(1, data.Settings.ReserveLines);
-                for (int k = 0; k < blanks; k++) AddMarkerRow(section, false);
+                AddGapRows(section, GapKind.Reserve);
             }
             if (firstRow >= 0 && firstRow < grid.Rows.Count) grid.FirstDisplayedScrollingRowIndex = firstRow;
             loading = false;
             UpdateStatus();
         }
 
-        /// <summary>Строка-заголовок раздела или пустая строка после раздела (только для просмотра).
-        /// В Tag — название раздела, чтобы «Добавить строку» знала, куда добавлять.</summary>
-        void AddMarkerRow(string section, bool header)
+        /// <summary>Строка таблицы, не являющаяся записью: заголовок раздела (Gap == null) или свободная строка
+        /// листа. Раздел нужен «Добавить строку» — куда добавлять, свободной строке — что уменьшать при удалении.</summary>
+        class Marker
+        {
+            public string Section;
+            public GapKind? Gap;
+        }
+
+        void AddGapRows(string section, GapKind kind)
+        {
+            for (int k = 0; k < data.GapLines(section, kind); k++) AddMarkerRow(section, kind);
+        }
+
+        /// <summary>Строка-заголовок раздела или свободная строка (только для просмотра).</summary>
+        void AddMarkerRow(string section, GapKind? gap)
         {
             int i = grid.Rows.Add();
             DataGridViewRow gr = grid.Rows[i];
-            gr.Tag = section;
+            gr.Tag = new Marker { Section = section, Gap = gap };
             // флажок и список разделов в такой строке не нужны — заменяем ячейки текстовыми
             gr.Cells["Use"] = new DataGridViewTextBoxCell();
             gr.Cells["Section"] = new DataGridViewTextBoxCell();
             gr.ReadOnly = true;
-            gr.DefaultCellStyle.BackColor = header ? Color.FromArgb(232, 236, 244) : Color.FromArgb(246, 247, 250);
-            gr.DefaultCellStyle.SelectionBackColor = gr.DefaultCellStyle.BackColor;
+            Color back = gap == null ? Color.FromArgb(232, 236, 244) : Color.FromArgb(246, 247, 250);
+            gr.DefaultCellStyle.BackColor = back;
+            gr.DefaultCellStyle.SelectionBackColor = gap == null ? back : Color.FromArgb(205, 215, 235);
             gr.DefaultCellStyle.SelectionForeColor = Color.Black;
-            if (header)
+            DataGridViewCell c = gr.Cells["Name"];
+            if (gap == null)
             {
-                DataGridViewCell c = gr.Cells["Name"];
                 c.Value = section;
                 c.Style.Font = new Font(grid.Font, FontStyle.Bold | FontStyle.Underline);
+                c.Style.Alignment = DataGridViewContentAlignment.MiddleCenter;
+            }
+            else
+            {
+                c.Value = "свободная строка";
+                c.Style.ForeColor = Color.DarkGray;
+                c.Style.Font = new Font(grid.Font, FontStyle.Italic);
                 c.Style.Alignment = DataGridViewContentAlignment.MiddleCenter;
             }
         }
@@ -443,6 +474,17 @@ namespace GroupSpecB
             return res;
         }
 
+        List<Marker> SelectedMarkers()
+        {
+            List<Marker> res = new List<Marker>();
+            foreach (DataGridViewCell c in grid.SelectedCells)
+            {
+                Marker m = grid.Rows[c.RowIndex].Tag as Marker;
+                if (m != null && !res.Contains(m)) res.Add(m);
+            }
+            return res;
+        }
+
         void SelectSpecRows(List<SpecRow> rows)
         {
             grid.ClearSelection();
@@ -523,8 +565,8 @@ namespace GroupSpecB
             Commit();
             List<SpecRow> sel = SelectedRows();
             // выделен заголовок раздела или пустая строка после него — добавляем в конец этого раздела
-            string markerSection = grid.CurrentRow != null ? grid.CurrentRow.Tag as string : null;
-            string section = sel.Count > 0 ? sel[sel.Count - 1].Section : markerSection ?? Sections.Documentation;
+            Marker marker = grid.CurrentRow != null ? grid.CurrentRow.Tag as Marker : null;
+            string section = sel.Count > 0 ? sel[sel.Count - 1].Section : marker != null ? marker.Section : Sections.Documentation;
             SpecRow r = new SpecRow { Source = RowSource.Manual, Section = section };
             r.MarkEdited("Section");
             int at = sel.Count > 0 ? data.Rows.IndexOf(sel[sel.Count - 1]) + 1 : data.Rows.Count;
@@ -546,9 +588,33 @@ namespace GroupSpecB
                 else { data.Rows.Remove(r); del++; }
             }
             if (sel.Exists(r => r.Key == SpecLogic.AsmDrawingKey)) data.Settings.AddAssemblyDrawing = false;
+            // свободные строки — только в этом чертеже: параметр «Свободных строк после раздела» не меняется
+            int gaps = 0;
+            foreach (Marker m in SelectedMarkers())
+            {
+                if (m.Gap == null) continue;
+                data.SetGapLines(m.Section, m.Gap.Value, data.GapLines(m.Section, m.Gap.Value) - 1);
+                gaps++;
+            }
             SpecLogic.Renumber(data);
             FillGrid();
-            if (bom > 0) SetStatus("Строки BOM (" + bom + ") исключены из спецификации; вернуть — флажок «В СП».");
+            List<string> msg = new List<string>();
+            if (bom > 0) msg.Add("Строки BOM (" + bom + ") исключены из спецификации; вернуть — флажок «В СП».");
+            if (gaps > 0) msg.Add("Удалено свободных строк: " + gaps + " (в этом чертеже); вернуть — «Вернуть свободные строки».");
+            if (msg.Count > 0) SetStatus(string.Join("   ", msg));
+        }
+
+        void OnResetGaps(object sender, EventArgs e)
+        {
+            Commit();
+            List<string> sections = new List<string>();
+            foreach (SpecRow r in SelectedRows()) if (!sections.Contains(r.Section)) sections.Add(r.Section);
+            foreach (Marker m in SelectedMarkers()) if (!sections.Contains(m.Section)) sections.Add(m.Section);
+            if (sections.Count == 0) data.ResetGaps(null);
+            foreach (string s in sections) data.ResetGaps(s);
+            FillGrid();
+            SetStatus(sections.Count == 0 ? "Свободные строки всех разделов — по умолчанию."
+                                          : "Свободные строки по умолчанию: " + string.Join(", ", sections) + ".");
         }
 
         void MoveRows(int dir)

@@ -180,15 +180,15 @@ namespace GroupSpecB
                         List<SpecLine> block = new List<SpecLine>();
                         if (firstInSection)
                         {
-                            block.Add(Blank());
+                            for (int k = 0; k < data.GapLines(section, GapKind.Before); k++) block.Add(Blank());
                             block.Add(new SpecLine { Kind = LineKind.Header, Name = section });
-                            block.Add(Blank());
+                            for (int k = 0; k < data.GapLines(section, GapKind.After); k++) block.Add(Blank());
                             firstInSection = false;
                         }
                         block.AddRange(RowLines(r, execs, s, measure, gost2106));
                         blocks.Add(block);
                     }
-                    for (int k = 0; k < s.ReserveLines; k++) blocks.Add(new List<SpecLine> { Blank() });
+                    for (int k = 0; k < data.GapLines(section, GapKind.Reserve); k++) blocks.Add(new List<SpecLine> { Blank() });
                 }
 
                 SpecPage page = NewPage(pages, d, execs, gost2106);
