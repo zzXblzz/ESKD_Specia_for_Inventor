@@ -129,8 +129,10 @@ namespace GroupSpecB
                 List<List<SpecLine>> blocks = new List<List<SpecLine>>();
                 foreach (string section in Sections.Order)
                 {
+                    // строка без количества ни в одном исполнении (документ, свободная запись) — на листах
+                    // первого десятка, иначе при больше чем 10 исполнениях она пропала бы со всех листов
                     List<SpecRow> rows = data.Rows.FindAll(r => r.Section == section && !r.Hidden &&
-                        (decades.Count == 1 || RowUsedIn(r, execs)));
+                        (decades.Count == 1 || RowUsedIn(r, execs) || d == 0 && !RowUsedIn(r, all)));
                     if (rows.Count == 0) continue;
                     bool firstInSection = true;
                     foreach (SpecRow r in rows)
