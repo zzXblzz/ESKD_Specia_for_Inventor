@@ -189,7 +189,7 @@ namespace GroupSpecB
             {
                 if (l.Kind != LineKind.Data) { prevBase = null; continue; }
                 if (!l.FirstOfRow) continue;
-                if (l.Row == null || l.Row.Section == Sections.Documentation) { prevBase = null; continue; }
+                if (l.Row == null || !Sections.HasExecutions(l.Row.Section)) { prevBase = null; continue; }
                 string b, n;
                 bool hasNum = SpecLogic.SplitExecution(l.Row.Designation, out b, out n);
                 if (b == "" || HasManualBreaks(l.Row.Designation)) { prevBase = null; continue; }

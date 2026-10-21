@@ -36,6 +36,14 @@ namespace GroupSpecB
             return section == Documentation || section == Assemblies || section == Parts;
         }
 
+        /// <summary>Разделы с обозначениями ЕСКД, где действуют исполнения: группировка исполнений одной части
+        /// и сокращение «-02» (ГОСТ 2.113 п. 5.3). В стандартных и прочих изделиях, материалах «-70» в
+        /// «ГОСТ 7798-70» — год стандарта, а не номер исполнения.</summary>
+        public static bool HasExecutions(string section)
+        {
+            return section == Complexes || section == Assemblies || section == Parts || section == Kits;
+        }
+
         /// <summary>Разделы, в которых составные части сортируются по наименованию, а не по обозначению.</summary>
         public static bool SortByName(string section)
         {

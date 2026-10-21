@@ -17,14 +17,21 @@ namespace GroupSpecB
             return DocCodeRx.Replace((designation ?? "").Trim(), "");
         }
 
-        /// <summary>Разбирает «АБВГ.123456.789-01» на базовое обозначение и номер исполнения.</summary>
+        /// <summary>Разбирает «АБВГ.123456.789-01» на базовое обозначение и номер исполнения. Номер исполнения
+        /// бывает только у обозначения вида ЕСКД — без пробелов и с точкой в базовой части; в «ГОСТ 7798-70»
+        /// или «DIN 6921-8» число после дефиса — не номер исполнения.</summary>
         public static bool SplitExecution(string designation, out string baseDes, out string number)
         {
             string d = StripDocCode(designation);
             Match m = ExecRx.Match(d);
-            if (m.Success) { baseDes = m.Groups[1].Value; number = m.Groups[2].Value; return true; }
+            if (m.Success && IsEskdBase(m.Groups[1].Value)) { baseDes = m.Groups[1].Value; number = m.Groups[2].Value; return true; }
             baseDes = d; number = "";
             return false;
+        }
+
+        static bool IsEskdBase(string b)
+        {
+            return b.IndexOf('.') > 0 && !Regex.IsMatch(b, @"\s");
         }
 
         public static string GuessBaseDesignation(List<Execution> execs)
@@ -277,6 +284,7 @@ namespace GroupSpecB
         /// Номера позиций BOM для группировки не используются: надстройка сама их перенумеровывает.</summary>
         static string GroupKey(SpecRow r)
         {
+            if (!Sections.HasExecutions(r.Section)) return "R:" + r.Id;
             string b, n;
             SplitExecution(r.Designation, out b, out n);
             if (!string.IsNullOrEmpty(b)) return "D:" + b.ToUpperInvariant();
