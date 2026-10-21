@@ -305,6 +305,7 @@ namespace GroupSpecB
         public string DrawingFormat = "";  // формат первого листа сборочного чертежа (при запуске из чертежа)
         public string BaseDesignation = "";  // базовое обозначение исполнений, заданное вручную (пусто — автоматически)
         public string InvNo = "", FirstUse = "", RefNo = "";   // дополнительные графы: Инв. № подл., Перв. примен., Справ. №
+        public bool OnDrawingSheet;      // ГОСТ 2.106: таблица на листе чертежа над основной надписью, а не на листах «СП-N»
         public List<Execution> Executions = new List<Execution>();
         public List<SpecRow> Rows = new List<SpecRow>();
         public List<SectionGap> Gaps = new List<SectionGap>();   // свободные строки, удалённые в этом чертеже
@@ -350,6 +351,10 @@ namespace GroupSpecB
         }
 
         [XmlIgnore] public bool Is2106 { get { return EffectiveType() == SpecTypes.Gost2106; } }
+
+        /// <summary>Спецификация выводится на лист чертежа над основной надписью (только ГОСТ 2.106;
+        /// групповая всегда на отдельных листах).</summary>
+        [XmlIgnore] public bool OnDrawing { get { return OnDrawingSheet && Is2106; } }
 
         /// <summary>Исполнения в графах «Кол.»: для ГОСТ 2.106 — одна графа основного (первого включённого)
         /// исполнения, для ГОСТ 2.113 — все включённые.</summary>

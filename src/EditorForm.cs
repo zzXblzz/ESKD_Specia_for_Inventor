@@ -37,6 +37,7 @@ namespace GroupSpecB
         ToolStripStatusLabel status;
         CheckBox showHidden;
         ToolStripComboBox typeBox;
+        ToolStripButton onDrawingBtn;   // ГОСТ 2.106: спецификация над основной надписью листа чертежа
         bool loading;
 
         static readonly string[] TypeValues = { SpecTypes.Auto, SpecTypes.Gost2106, SpecTypes.Gost2113 };
@@ -75,6 +76,11 @@ namespace GroupSpecB
             typeBox.SelectedIndex = Math.Max(0, Array.IndexOf(TypeValues, data.SpecType ?? SpecTypes.Auto));
             typeBox.SelectedIndexChanged += OnTypeChanged;
             ts.Items.Add(typeBox);
+            onDrawingBtn = new ToolStripButton("На листе чертежа") { CheckOnClick = true, Checked = data.OnDrawingSheet,
+                DisplayStyle = ToolStripItemDisplayStyle.Text,
+                ToolTipText = "ГОСТ 2.106: вывести таблицу спецификации на активный лист чертежа над основной надписью, а не на отдельные листы «СП-N»" };
+            onDrawingBtn.CheckedChanged += (s, e) => { if (!loading) data.OnDrawingSheet = onDrawingBtn.Checked; };
+            ts.Items.Add(onDrawingBtn);
             ts.Items.Add(new ToolStripSeparator());
             ts.Items.Add(Btn("Обновить из BOM", "Перечитать исполнения и BOM параметрической сборки (ручные правки сохраняются)", OnRefresh));
             ts.Items.Add(new ToolStripSeparator());
@@ -249,6 +255,7 @@ namespace GroupSpecB
         void LoadAll()
         {
             Text = SpecTypes.Title(data.EffectiveType());   // тип «по числу 3D-моделей» меняется при добавлении исполнений
+            onDrawingBtn.Enabled = data.Is2106;
             FillExecGrid();
             props.SelectedObject = data.Settings;
             FillGrid();
@@ -667,6 +674,7 @@ namespace GroupSpecB
         void UpdateTypeView()
         {
             Text = SpecTypes.Title(data.EffectiveType());
+            onDrawingBtn.Enabled = data.Is2106;   // групповая — только на отдельных листах
             SpecLogic.EnsureAssemblyDrawingRow(data);
             SpecLogic.Renumber(data);   // в ГОСТ 2.106 строки только других исполнений не нумеруются
             FillGrid();

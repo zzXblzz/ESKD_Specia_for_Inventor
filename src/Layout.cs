@@ -25,6 +25,7 @@ namespace GroupSpecB
         public List<Execution> Execs = new List<Execution>(); // исполнения в графах этого листа (до 10)
         public List<SpecLine> Lines = new List<SpecLine>();
         public bool Gost2106;            // лист спецификации по ГОСТ 2.106 (формы 1 / 1а), иначе групповой (1б / 1а)
+        public bool OnDrawing;           // таблица на листе чертежа над основной надписью: одна, без разбиения на листы
         public bool First { get { return Number == 1; } }
     }
 
@@ -192,6 +193,7 @@ namespace GroupSpecB
                 }
 
                 SpecPage page = NewPage(pages, d, execs, gost2106);
+                page.OnDrawing = data.OnDrawing;
                 foreach (List<SpecLine> block in blocks)
                 {
                     int cap = Capacity(page, s);
@@ -237,6 +239,7 @@ namespace GroupSpecB
 
         public static int Capacity(SpecPage p, SpecSettings s)
         {
+            if (p.OnDrawing) return int.MaxValue / 2;   // высота таблицы — по числу строк, проверяется при выводе
             if (p.Gost2106) return p.First ? Math.Max(1, s.RowsFirst2106) : Math.Max(1, s.RowsNext2106);
             return p.First ? Math.Max(1, s.RowsFirst) : Math.Max(1, s.RowsNext);
         }
