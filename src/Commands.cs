@@ -186,6 +186,11 @@ namespace GroupSpecB
             try { sectionReport = BomCollector.WriteModelProperties(app, data, s => { try { app.StatusBarText = s; } catch { } }); }
             catch (Exception ex) { sectionReport = "Запись в модели: ошибка — " + ex.Message; }
 
+            // исправленные количества: параметр количества детали или количество в строке BOM сборки
+            string qtyReport = null;
+            try { qtyReport = BomQuantity.Write(app, data, s => { try { app.StatusBarText = s; } catch { } }); }
+            catch (Exception ex) { qtyReport = "Количество в моделях: ошибка — " + ex.Message; }
+
             // LastFormat специфицируемой сборки = формат первого листа сборочного чертежа
             if (!string.IsNullOrEmpty(data.DrawingFormat))
             {
@@ -242,6 +247,7 @@ namespace GroupSpecB
             try { ((Document)dwg).Activate(); } catch { }
             List<string> reports = new List<string>();
             if (sectionReport != null && (sectionReport.Contains("Не записано") || sectionReport.Contains("ошибка"))) reports.Add(sectionReport);
+            if (qtyReport != null && (qtyReport.Contains("не записано") || qtyReport.Contains("ошибка") || qtyReport.Contains("сохраните"))) reports.Add(qtyReport);
             if (bomReport != null && bomReport.Contains("\r\n") || bomReport != null && bomReport.Contains("ошибка")) reports.Add(bomReport);
             if (titleReport != null) reports.Add(titleReport);
             if (layoutWarnings.Count > 0) reports.Add(string.Join("\r\n", layoutWarnings));
