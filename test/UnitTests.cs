@@ -34,6 +34,7 @@ static class UnitTests
         Run("Больше 10 исполнений", Decades);
         Run("Перенос по замеру текста", WrapMeasured);
         Run("Свойства материала в чертеже", Material);
+        Run("Материал дробью в наименовании", MaterialInName);
         Run("Тип спецификации по числу 3D-моделей", SpecTypeAuto);
         Run("Спецификация по ГОСТ 2.106", Gost2106);
         Run("Свободные строки между разделами", Gaps);
@@ -231,6 +232,38 @@ static class UnitTests
         Check(MaterialLogic.IsManual("См. чертёж"), "«см. …» — задано вручную");
         Check(!MaterialLogic.IsManual("Сталь 45"), "материал — не вручную");
         Check(!MaterialLogic.IsManual(""), "пусто — не вручную");
+    }
+
+    static void MaterialInName()
+    {
+        SpecSettings s = new SpecSettings();
+        string mat = "Лист\\Б-ПН-1 ГОСТ 19904-90\\ОК360В - III ГОСТ 16523-97";
+        List<SpecLine> n = Layout.NameLines("Панель " + mat, mat, s);
+        Eq(3, n.Count, "наименование, числитель, знаменатель");
+        Eq("Панель", n[0].Name, "текст до материала — отдельной строкой");
+        Check(n[0].Frac == null, "первая строка — не дробь");
+        Check(n[1].FracUp && n[1].Frac.Rolling == "Лист", "числитель с сортаментом");
+        Eq("Б-ПН-1 ГОСТ 19904-90", n[1].Name, "числитель");
+        Check(!n[2].FracUp && n[2].Frac == n[1].Frac, "знаменатель той же дроби");
+        Eq("ОК360В - III ГОСТ 16523-97", n[2].Name, "знаменатель");
+
+        string prefix, suffix;
+        MaterialFraction f = MaterialLogic.Fraction("Круг 20-h11|Сталь 45|ГОСТ 1050-2013 L=120", null, out prefix, out suffix);
+        Eq("Круг 20-h11", f.Rolling, "без материала модели — сортамент вся первая часть");
+        f = MaterialLogic.Fraction("Ось Круг 20-h11\\Сталь 45\\ГОСТ 1050-2013 L=120", "Круг 20-h11\\Сталь 45\\ГОСТ 1050-2013", out prefix, out suffix);
+        Eq("Ось|Круг 20-h11|L=120", prefix + "|" + f.Rolling + "|" + suffix, "текст до и после материала модели");
+        Check(MaterialLogic.Fraction("Панель", mat, out prefix, out suffix) == null, "без материала — не дробь");
+        Check(MaterialLogic.Fraction("A\\B", null, out prefix, out suffix) == null, "две части — не дробь");
+
+        n = Layout.NameLines("Панель$" + mat, "", s);
+        Eq("Панель|Б-ПН-1 ГОСТ 19904-90|ОК360В - III ГОСТ 16523-97", n[0].Name + "|" + n[1].Name + "|" + n[2].Name, "с переносами «$»");
+
+        // строка записи: позиция в первой строке, дробь — во второй и третьей
+        SpecData data = Merge(Bom(Exec("A"), new BomItem { Key = "p", Designation = "АБВГ.547176.283", Name = "Панель " + mat,
+            Section = Sections.Parts, Qty = "1", Unit = "", Format = "", Note = "", ItemNumber = "", Material = mat }));
+        List<SpecLine> lines = DataLines(Layout.Build(data));
+        int at = lines.FindIndex(l => l.Row != null && l.Row.Key == "p");
+        Check(lines[at + 1].FracUp && lines[at + 2].Frac != null, "дробь в листе спецификации");
     }
 
     static void SpecTypeAuto()

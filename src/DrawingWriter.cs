@@ -428,6 +428,28 @@ namespace GroupSpecB
             FitWidth(tb, x2 - pad - x, P(x, ym));
         }
 
+        /// <summary>Графа «Наименование». Строка материала-дроби: сортамент слева, правее — числитель, под ним
+        /// черта длиной в больший из числителя и знаменателя; в следующей строке под числителем — знаменатель.
+        /// Числитель и знаменатель смещены к черте, чтобы дробь читалась одной записью.</summary>
+        void NameCell(double x1, double y1, double x2, double y2, SpecLine l, double h)
+        {
+            MaterialFraction f = l.Frac;
+            if (f == null) { Text(x1, y1, x2, y2, l.Name, 'L', h); return; }
+            const double pad = 1.0;
+            double gap = Math.Max(1.0, MeasureMm("Ш Ш", h) - 2 * MeasureMm("Ш", h));
+            double xf = x1 + pad + (f.Rolling != "" ? MeasureMm(f.Rolling, h) + gap : 0);
+            if (xf > x2 - pad - 10) xf = x2 - pad - 10;
+            if (!l.FracUp)
+            {
+                Text(xf - pad, y1 + 1.5, x2, y2 + 1.5, f.Down, 'L', h);
+                return;
+            }
+            Text(x1, y1 + 0.5, x2, y2 + 0.5, f.Rolling, 'L', h);
+            Text(xf - pad, y1 + 0.5, x2, y2 + 0.5, f.Up, 'L', h);
+            double w = Math.Min(Math.Max(MeasureMm(f.Up, h), MeasureMm(f.Down, h)), x2 - pad - xf);
+            Line(xf, y1 + 1.0, xf + w, y1 + 1.0, false);
+        }
+
         /// <summary>Повёрнутый на 90° текст (подписи узких граф «Формат», «Зона», «Поз.»).</summary>
         void TextVertical(double xc, double yc, string text, double h)
         {
@@ -485,7 +507,7 @@ namespace GroupSpecB
                 Text(ColX[2], y1, ColX[3], y2, l.Pos, 'C', h);
                 if (!string.IsNullOrEmpty(l.AbbrevPrefix)) TextAbbreviated(ColX[3], y1, ColX[4], y2, l.AbbrevPrefix, l.Designation, h);
                 else Text(ColX[3], y1, ColX[4], y2, l.Designation, 'L', h);
-                Text(ColX[4], y1, ColX[5], y2, l.Name, 'L', h);
+                NameCell(ColX[4], y1, ColX[5], y2, l, h);
                 for (int k = 0; k < 10; k++)
                     Text(QtyX0 + k * QtyW, y1, QtyX0 + (k + 1) * QtyW, y2, l.Qty[k], 'C', h);
                 Text(ColX[6], y1, ColX[7], y2, l.Note, 'L', h);
@@ -570,7 +592,7 @@ namespace GroupSpecB
                 Text(cx[1], y1, cx[2], y2, l.Zone, 'C', Math.Min(h, 2.5));
                 Text(cx[2], y1, cx[3], y2, l.Pos, 'C', h);
                 Text(cx[3], y1, cx[4], y2, l.Designation, 'L', h);
-                Text(cx[4], y1, cx[5], y2, l.Name, 'L', h);
+                NameCell(cx[4], y1, cx[5], y2, l, h);
                 Text(cx[5], y1, cx[6], y2, l.Qty[0], 'C', h);
                 Text(cx[6], y1, cx[7], y2, l.Note, 'L', h);
             }

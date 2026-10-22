@@ -579,6 +579,7 @@ namespace GroupSpecB
                     {
                         try { isContent = ((PartComponentDefinition)def).IsContentMember; } catch { }
                         if (isContent && Prop(ps, "ContentCenter", "IsCustomPart") == "1") isContent = false;
+                        if (d.DocumentType == DocumentTypeEnum.kPartDocumentObject) it.Material = DrawingMaterial.PartMaterial((PartDocument)d) ?? "";
                     }
                 }
                 it.Designation = Prop(ps, DesignTracking, "Part Number");

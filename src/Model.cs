@@ -96,6 +96,7 @@ namespace GroupSpecB
         public string Unit;
         public string ItemNumber;
         public string Qty;
+        public string Material = "";    // материал детали (для записи дробью в наименовании)
     }
 
     public class ExecutionBom
@@ -128,6 +129,7 @@ namespace GroupSpecB
         public string Note = "";
         public string Unit = "";         // единица измерения, если количество не в штуках
         public string BomItem = "";      // номер позиции в BOM (группирует взаимозаменяемые части)
+        public string Material = "";     // материал детали: «Сортамент\Марка\Стандарт» в наименовании пишется дробью
         public bool InMain;              // применяется в основном (первом) исполнении
         public bool Hidden;              // исключена из спецификации пользователем (строки BOM не удаляются)
         public List<QtyEntry> Qty = new List<QtyEntry>();
