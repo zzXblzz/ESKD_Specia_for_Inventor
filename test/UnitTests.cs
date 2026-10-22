@@ -264,6 +264,28 @@ static class UnitTests
         List<SpecLine> lines = DataLines(Layout.Build(data));
         int at = lines.FindIndex(l => l.Row != null && l.Row.Key == "p");
         Check(lines[at + 1].FracUp && lines[at + 2].Frac != null, "дробь в листе спецификации");
+
+        // запись с дробью у конца листа переносится на следующий лист целиком (ГОСТ 2.106 и 2.113)
+        foreach (string type in new[] { "2.106", "2.113" })
+            for (int fill = 0; fill < 60; fill++)
+            {
+                List<BomItem> items = new List<BomItem>();
+                for (int i = 0; i < fill; i++) items.Add(Item("f" + i, "АБВГ.000000." + (100 + i), "Деталь " + i, Sections.Parts, "1"));
+                items.Add(new BomItem { Key = "p", Designation = "АБВГ.547176.999", Name = "Панель " + mat, Section = Sections.Parts,
+                                        Qty = "1", Unit = "", Format = "", Note = "", ItemNumber = "", Material = mat });
+                SpecData d = Merge(Bom(Exec("A"), items.ToArray()));
+                d.SpecType = type;
+                int pageOfRow = -1;
+                bool whole = true;
+                foreach (SpecPage p in Layout.Build(d))
+                {
+                    int cnt = p.Lines.FindAll(l => l.Row != null && l.Row.Key == "p").Count;
+                    if (cnt == 0) continue;
+                    whole &= pageOfRow < 0 && cnt == 3;
+                    pageOfRow = p.Number;
+                }
+                if (!whole) { Check(false, type + ": запись с дробью разорвана при " + fill + " строках перед ней"); break; }
+            }
     }
 
     static void SpecTypeAuto()
