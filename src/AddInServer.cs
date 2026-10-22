@@ -38,6 +38,45 @@ namespace GroupSpecB
             inputEvents.OnActivateCommand += OnActivateCommand;
             txTimer = new Timer { Interval = 200 };
             txTimer.Tick += OnTxTimer;
+            titleTimer = new Timer { Interval = TitleDelay };
+            titleTimer.Tick += OnTitleTimer;
+        }
+
+        // Свойства основной надписи при активации чертежа (обозначение и др. могли измениться в 3D-модели,
+        // а чертёж без правок Inventor не сохраняет — OnSaveDocument тогда не приходит). Копируем с задержкой,
+        // после заплатки Specia: свойство, записанное внутри её незакрытой транзакции, откатится при Abort().
+        const int TitleDelay = TxTicks * 200 + 200;
+        const int TitleRetries = 5;
+        Timer titleTimer;
+        DrawingDocument titleDwg;
+        int titleRetriesLeft;
+
+        void OnTitleTimer(object sender, EventArgs e)
+        {
+            titleTimer.Stop();
+            DrawingDocument dwg = titleDwg;
+            try
+            {
+                Transaction t = app.TransactionManager.CurrentTransaction;
+                if (t != null && t.DisplayName == SpeciaDanglingTx && titleRetriesLeft-- > 0) { titleTimer.Start(); return; }
+                titleDwg = null;
+                SyncTitle(dwg, "Свойства основной надписи при активации чертежа");
+            }
+            catch (Exception ex) { titleDwg = null; Log.Write("Свойства основной надписи при активации чертежа", ex); }
+        }
+
+        /// <summary>Свойства основной надписи — из 3D-модели первого вида (для члена iPart/iAssembly — из фабрики)
+        /// в свойства чертежа. По умолчанию — только чертежи со спецификацией надстройки; для всех чертежей —
+        /// параметр «Свойства при сохранении: все чертежи».</summary>
+        void SyncTitle(DrawingDocument dwg, string what)
+        {
+            if (dwg == null) return;
+            try
+            {
+                if (DrawingWriter.HasData(dwg) || GlobalSettings.Load().SyncTitleOnSaveAllDrawings)
+                    SpecTitleBlock.CopyFromFirstViewModel(app, dwg);
+            }
+            catch (Exception ex) { Log.Write(what, ex); }
         }
 
         // ---- Временная заплатка для ESKD Specia (убрать вместе с Specia).
@@ -61,6 +100,10 @@ namespace GroupSpecB
             {
                 if (doc.DocumentType != DocumentTypeEnum.kDrawingDocumentObject) return;
                 UpdateMaterial((DrawingDocument)doc, "Свойства материала при активации чертежа");
+                titleTimer.Stop();
+                titleDwg = (DrawingDocument)doc;
+                titleRetriesLeft = TitleRetries;
+                titleTimer.Start();
                 if (!GlobalSettings.Load().FixSpeciaTransaction || !SpeciaLoaded()) return;
                 txTimer.Stop();
                 txTicksLeft = TxTicks;
@@ -130,9 +173,7 @@ namespace GroupSpecB
             }
         }
 
-        /// <summary>Перед сохранением чертежа: свойства основной надписи — из 3D-модели первого вида
-        /// (для члена iPart/iAssembly — из фабрики) в свойства чертежа. По умолчанию — только чертежи
-        /// с групповой спецификацией; для всех чертежей — параметр «Свойства при сохранении: все чертежи».</summary>
+        /// <summary>Перед сохранением чертежа: свойства материала и основной надписи (см. SyncTitle).</summary>
         void OnSaveDocument(_Document doc, EventTimingEnum timing, NameValueMap context, out HandlingCodeEnum handling)
         {
             handling = HandlingCodeEnum.kEventNotHandled;
@@ -142,8 +183,7 @@ namespace GroupSpecB
                 if (doc.DocumentType != DocumentTypeEnum.kDrawingDocumentObject) return;
                 DrawingDocument dwg = (DrawingDocument)doc;
                 UpdateMaterial(dwg, "Свойства материала при сохранении");
-                if (DrawingWriter.HasData(dwg) || GlobalSettings.Load().SyncTitleOnSaveAllDrawings)
-                    SpecTitleBlock.CopyFromFirstViewModel(app, dwg);
+                SyncTitle(dwg, "Свойства основной надписи при сохранении");
             }
             catch (Exception ex) { Log.Write("Свойства основной надписи при сохранении", ex); }   // сохранение не должно срываться из-за надстройки
         }
@@ -155,11 +195,12 @@ namespace GroupSpecB
             UpdateMaterial(ActiveDrawing(), "Свойства материала после " + command);
         }
 
-        /// <summary>Свойства материала перед печатью чертежа.</summary>
+        /// <summary>Свойства материала и основной надписи перед печатью чертежа.</summary>
         void OnActivateCommand(string command, NameValueMap context)
         {
             if (command != "AppFilePrintCmd") return;
             UpdateMaterial(ActiveDrawing(), "Свойства материала перед печатью");
+            SyncTitle(ActiveDrawing(), "Свойства основной надписи перед печатью");
         }
 
         DrawingDocument ActiveDrawing()
@@ -192,6 +233,8 @@ namespace GroupSpecB
         public void Deactivate()
         {
             if (txTimer != null) { txTimer.Stop(); txTimer.Tick -= OnTxTimer; txTimer.Dispose(); txTimer = null; }
+            if (titleTimer != null) { titleTimer.Stop(); titleTimer.Tick -= OnTitleTimer; titleTimer.Dispose(); titleTimer = null; }
+            titleDwg = null;
             if (appEvents != null)
             {
                 appEvents.OnSaveDocument -= OnSaveDocument;
