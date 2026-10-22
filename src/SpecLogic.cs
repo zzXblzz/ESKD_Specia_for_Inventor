@@ -161,6 +161,7 @@ namespace GroupSpecB
                         if (!row.IsEdited("Name")) row.Name = it.Name;
                         if (!row.IsEdited("Note")) row.Note = it.Unit != "" && it.Note == "" ? it.Unit : it.Note;
                         row.Unit = it.Unit;
+                        row.Material = it.Material ?? "";
                         // количества пересчитываются целиком, кроме исправленных вручную
                         List<QtyEntry> keep = new List<QtyEntry>();
                         foreach (QtyEntry q in row.Qty) if (row.IsEdited("Qty:" + q.Exec)) keep.Add(q);

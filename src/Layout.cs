@@ -14,6 +14,8 @@ namespace GroupSpecB
         public string[] Qty = new string[10];
         public string AbbrevPrefix;      // сокращённое обозначение «-01» (ГОСТ 2.113 п. 5.3): пишется со смещением
                                          // на ширину этой части полного обозначения (базового, без номера исполнения)
+        public MaterialFraction Frac;    // строка материала-дроби в графе «Наименование» (Name — числитель или знаменатель)
+        public bool FracUp;              // строка числителя: с сортаментом слева и чертой дроби
         public SpecRow Row;              // строка-источник (для первой строки записи)
         public bool FirstOfRow;
     }
@@ -106,10 +108,37 @@ namespace GroupSpecB
         {
             return text != null && (text.IndexOf('$') >= 0 || text.IndexOf('\n') >= 0);
         }
+
+        /// <summary>Строки графы «Наименование». Материал из трёх частей (MaterialLogic.Fraction) пишется дробью
+        /// в две строки: сортамент и числитель с чертой, под числителем — знаменатель; текст перед материалом —
+        /// строками выше, после него — ниже. С переносами «$» дробью пишется часть, которая сама — материал.</summary>
+        public static List<SpecLine> NameLines(string text, string material, SpecSettings s, Func<string, double> measure = null)
+        {
+            List<SpecLine> res = new List<SpecLine>();
+            string src = (text ?? "").Replace("\r\n", "\n");
+            bool manual = HasManualBreaks(src);
+            foreach (string part in manual ? src.Split('$', '\n') : new[] { src })
+            {
+                string prefix, suffix;
+                MaterialFraction f = MaterialLogic.Fraction(part, material, out prefix, out suffix);
+                if (f == null) { prefix = part; suffix = ""; }
+                if (f == null || prefix != "")
+                    foreach (string t in manual ? new List<string> { prefix.Trim() } : Wrap(prefix, WName, s, measure))
+                        res.Add(new SpecLine { Name = t });
+                if (f == null) continue;
+                res.Add(new SpecLine { Name = f.Up, Frac = f, FracUp = true });
+                res.Add(new SpecLine { Name = f.Down, Frac = f });
+                if (suffix != "")
+                    foreach (string t in manual ? new List<string> { suffix } : Wrap(suffix, WName, s, measure))
+                        res.Add(new SpecLine { Name = t });
+            }
+            return res;
+        }
+
         static List<SpecLine> RowLines(SpecRow r, List<Execution> execs, SpecSettings s, Func<string, double> measure, bool gost2106)
         {
             List<string> des = Wrap(r.Designation, WDesignation, s, measure);
-            List<string> name = Wrap(r.Name, WName, s, measure);
+            List<SpecLine> name = NameLines(r.Name, r.Material, s, measure);
             List<string> note = Wrap(r.Note, gost2106 ? WNote2106 : WNote, s, measure);
             int n = Math.Max(des.Count, Math.Max(name.Count, note.Count));
             List<SpecLine> res = new List<SpecLine>();
@@ -125,7 +154,7 @@ namespace GroupSpecB
                     l.Zone = r.Zone; l.Pos = r.Pos;
                 }
                 l.Designation = i < des.Count ? des[i] : "";
-                l.Name = i < name.Count ? name[i] : "";
+                if (i < name.Count) { l.Name = name[i].Name; l.Frac = name[i].Frac; l.FracUp = name[i].FracUp; }
                 l.Note = i < note.Count ? note[i] : "";
                 if (i == 0)
                 {
