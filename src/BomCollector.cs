@@ -46,8 +46,8 @@ namespace GroupSpecB
 
         /// <summary>Записывает в 3D-модели элементов спецификации (выполняется по кнопке «Сформировать»):
         /// пользовательское свойство spec_section — раздел, к которому элемент отнесён (в т. ч. перенесённый
-        /// пользователем); обозначение (Part Number) и наименование (Description или Title), если их исправили
-        /// в окне предпросмотра. Для строки, слитой из нескольких файлов, пишется во все файлы. Модель
+        /// пользователем); обозначение (Part Number), наименование (Description или Title), формат (LastFormat)
+        /// и примечание, если их исправили в окне предпросмотра. Для строки, слитой из нескольких файлов, пишется во все файлы. Модель
         /// сохраняется, если в ней не было несохранённых правок. Возвращает отчёт.</summary>
         public static string WriteModelProperties(Application app, SpecData data, Action<string> progress)
         {
@@ -61,13 +61,14 @@ namespace GroupSpecB
             {
                 k++;
                 if (progress != null) progress("Запись в модели: " + k + " из " + rows.Count);
-                bool desOk = true, nameOk = true;
+                bool desOk = true, nameOk = true, secOk = true, fmtOk = true, noteOk = true;
                 foreach (string key in r.AllKeys())
                 {
                     if (key.StartsWith("virtual:"))
                     {
-                        if (r.IsEdited("Designation") || r.IsEdited("Name"))
-                        { failed.Add(Name(r) + " — виртуальный компонент: исправьте его в сборке"); desOk = nameOk = false; }
+                        if (r.IsEdited("Designation") || r.IsEdited("Name") || r.IsEdited("Format") || r.IsEdited("Note"))
+                            failed.Add(Name(r) + " — виртуальный компонент: исправьте его в сборке");
+                        desOk = nameOk = secOk = fmtOk = noteOk = false;
                         continue;
                     }
                     Document d = null;
@@ -82,7 +83,7 @@ namespace GroupSpecB
                             failed.Add(System.IO.Path.GetFileName(wantFile) + " — вместо него Inventor открыл " +
                                        System.IO.Path.GetFileName(d.FullFileName) +
                                        " (файлы-копии с одинаковым внутренним именем); исправьте свойства этого файла вручную");
-                            desOk = nameOk = false;
+                            desOk = nameOk = secOk = fmtOk = noteOk = false;
                             continue;
                         }
                         List<string[]> changes = new List<string[]>();   // {набор, свойство, значение}
@@ -94,6 +95,11 @@ namespace GroupSpecB
                             if (title && Prop(d.PropertySets, Summary, "Title") != r.Name) changes.Add(new[] { Summary, "Title", r.Name });
                             if (!title && Prop(d.PropertySets, DesignTracking, "Description") != r.Name) changes.Add(new[] { DesignTracking, "Description", r.Name });
                         }
+                        // формат и примечание читаются из пользовательских свойств (ReadBom)
+                        if (r.IsEdited("Format") && Sections.HasFormat(r.Section) && UserProp(d.PropertySets, "LastFormat", "Формат") != r.Format)
+                            changes.Add(new[] { UserDefined, "LastFormat", r.Format });
+                        if (r.IsEdited("Note") && UserProp(d.PropertySets, "Примечание") != r.Note)
+                            changes.Add(new[] { UserDefined, "Примечание", r.Note });
                         if (changes.Count == 0) { same++; continue; }
 
                         if (!d.IsModifiable)
@@ -106,12 +112,16 @@ namespace GroupSpecB
                                 if (c[1] == SectionProp && fp != null)
                                 {
                                     string err = WriteToDocument(app, fp, r.Section);
-                                    if (err == null) { written++; viaFactory++; } else failed.Add(Name(r) + " — фабрика: " + err);
+                                    if (err == null) { written++; viaFactory++; } else { failed.Add(Name(r) + " — фабрика: " + err); secOk = false; }
                                 }
                                 else
                                 {
                                     failed.Add(Name(r) + " — " + (fp != null ? "член iPart/iAssembly: «" + c[1] + "» задаётся в таблице фабрики" : "модель только для чтения"));
-                                    if (c[1] == "Part Number") desOk = false; else if (c[1] != SectionProp) nameOk = false;
+                                    if (c[1] == "Part Number") desOk = false;
+                                    else if (c[1] == SectionProp) secOk = false;
+                                    else if (c[1] == "LastFormat") fmtOk = false;
+                                    else if (c[1] == "Примечание") noteOk = false;
+                                    else nameOk = false;
                                 }
                             }
                             continue;
@@ -136,13 +146,17 @@ namespace GroupSpecB
                     catch (Exception ex)
                     {
                         failed.Add(Name(r) + " — " + ex.Message);
-                        desOk = nameOk = false;
+                        desOk = nameOk = secOk = fmtOk = noteOk = false;
                     }
                     finally { if (opened && d != null) try { d.Close(true); } catch { } }
                 }
                 // модель теперь совпадает со спецификацией — дальше значения снова берутся из модели
+                // (и в редакторе больше не выделяются жирным)
                 if (desOk) r.Edited.Remove("Designation");
                 if (nameOk) r.Edited.Remove("Name");
+                if (secOk) r.Edited.Remove("Section");
+                if (fmtOk && Sections.HasFormat(r.Section)) r.Edited.Remove("Format");
+                if (noteOk) r.Edited.Remove("Note");
             }
             string rep = "Запись в модели: изменено моделей — " + written +
                          (viaFactory > 0 ? " (в т. ч. фабрик iPart/iAssembly — " + viaFactory + ")" : "") +
