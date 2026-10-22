@@ -428,26 +428,34 @@ namespace GroupSpecB
             FitWidth(tb, x2 - pad - x, P(x, ym));
         }
 
-        /// <summary>Графа «Наименование». Строка материала-дроби: сортамент слева, правее — числитель, под ним
-        /// черта длиной в больший из числителя и знаменателя; в следующей строке под числителем — знаменатель.
-        /// Числитель и знаменатель смещены к черте, чтобы дробь читалась одной записью.</summary>
+        /// <summary>Графа «Наименование». Материал-дробь занимает две строки, черта дроби — на их границе (линия
+        /// строк в этой графе не проводится, см. RowLine): сортамент слева по центру двух строк, правее — черта
+        /// длиной в больший из числителя и знаменателя, числитель над ней, знаменатель под ней, оба по центру черты.
+        /// Рисуется по строке числителя; строка знаменателя пустая.</summary>
         void NameCell(double x1, double y1, double x2, double y2, SpecLine l, double h)
         {
             MaterialFraction f = l.Frac;
             if (f == null) { Text(x1, y1, x2, y2, l.Name, 'L', h); return; }
+            if (!l.FracUp) return;
             const double pad = 1.0;
             double gap = Math.Max(1.0, MeasureMm("Ш Ш", h) - 2 * MeasureMm("Ш", h));
             double xf = x1 + pad + (f.Rolling != "" ? MeasureMm(f.Rolling, h) + gap : 0);
             if (xf > x2 - pad - 10) xf = x2 - pad - 10;
-            if (!l.FracUp)
-            {
-                Text(xf - pad, y1 + 1.5, x2, y2 + 1.5, f.Down, 'L', h);
-                return;
-            }
-            Text(x1, y1 + 0.5, x2, y2 + 0.5, f.Rolling, 'L', h);
-            Text(xf - pad, y1 + 0.5, x2, y2 + 0.5, f.Up, 'L', h);
             double w = Math.Min(Math.Max(MeasureMm(f.Up, h), MeasureMm(f.Down, h)), x2 - pad - xf);
-            Line(xf, y1 + 1.0, xf + w, y1 + 1.0, false);
+            double d = Math.Min(RowH / 2, h / 2 + 1.2);   // расстояние от черты до середины строки текста
+            Text(x1, y1 - RowH / 2, x2, y1 + RowH / 2, f.Rolling, 'L', h);
+            Text(xf - pad, y1 + d - 4, xf + w + pad, y1 + d + 4, f.Up, 'C', h);
+            Text(xf - pad, y1 - d - 4, xf + w + pad, y1 - d + 4, f.Down, 'C', h);
+            Line(xf, y1, xf + w, y1, false);
+        }
+
+        /// <summary>Линия между строками таблицы; под строкой числителя дроби графа «Наименование» (xn1..xn2)
+        /// пропускается — там черта дроби.</summary>
+        void RowLine(double xl, double xr, double y, SpecLine above, double xn1, double xn2, bool thick)
+        {
+            if (above == null || !above.FracUp) { Line(xl, y, xr, y, thick); return; }
+            Line(xl, y, xn1, y, thick);
+            Line(xn2, y, xr, y, thick);
         }
 
         /// <summary>Повёрнутый на 90° текст (подписи узких граф «Формат», «Зона», «Поз.»).</summary>
@@ -491,7 +499,8 @@ namespace GroupSpecB
 
             // --- строки
             for (int r = 1; r <= cap; r++)
-                Line(FL, HeadBottom - r * RowH, FR, HeadBottom - r * RowH, r == cap);
+                RowLine(FL, FR, HeadBottom - r * RowH, r < cap && r <= page.Lines.Count ? page.Lines[r - 1] : null,
+                        ColX[4], ColX[5], r == cap);
             for (int i = 0; i < page.Lines.Count && i < cap; i++)
             {
                 SpecLine l = page.Lines[i];
@@ -576,7 +585,7 @@ namespace GroupSpecB
             for (int r = 1; r < cap; r++)
             {
                 double y = headBottom - r * RowH;
-                if (y > yb + 0.01) Line(xl, y, xr, y, false);
+                if (y > yb + 0.01) RowLine(xl, xr, y, r <= page.Lines.Count ? page.Lines[r - 1] : null, cx[4], cx[5], false);
             }
             for (int i = 0; i < page.Lines.Count && i < cap; i++)
             {
