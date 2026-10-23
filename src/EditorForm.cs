@@ -29,8 +29,9 @@ namespace GroupSpecB
     public class EditorForm : Form
     {
         readonly SpecData data;
-        readonly Func<Action<string>, string> refresh;
-        readonly TitleState titleState;        // обновить из BOM → сообщение об ошибке или null
+        readonly Func<Action<string>, string> refresh;   // перечитать BOM → сообщение об ошибке или null
+        readonly Func<Action<string>, string> save;      // записать правки в 3D-модели и перечитать BOM → отчёт или null
+        readonly TitleState titleState;
         SpecGrid grid;
         DataGridView execGrid;
         PropertyGrid props;
@@ -51,9 +52,13 @@ namespace GroupSpecB
         static readonly string[] FieldCols = { "Section", "Format", "Zone", "Pos", "Designation", "Name" };
 
         public EditorForm(SpecData data, Func<Action<string>, string> refresh, TitleState titleState)
+            : this(data, refresh, null, titleState) { }
+
+        public EditorForm(SpecData data, Func<Action<string>, string> refresh, Func<Action<string>, string> save, TitleState titleState)
         {
             this.data = data;
             this.refresh = refresh;
+            this.save = save;
             this.titleState = titleState ?? new TitleState();
             Text = SpecTypes.Title(data.EffectiveType());
             Width = 1400; Height = 780;
@@ -84,7 +89,11 @@ namespace GroupSpecB
                 ToolTipText = "ГОСТ 2.106: вывести таблицу спецификации на активный лист чертежа над основной надписью, а не на отдельные листы «СП-N»"
             });
             ts.Items.Add(new ToolStripSeparator());
-            ts.Items.Add(Btn("Обновить из BOM", "Перечитать исполнения и BOM параметрической сборки (ручные правки сохраняются)", OnRefresh));
+            ts.Items.Add(Btn("Загрузить из BOM", "Заново загрузить все данные из 3D-моделей исполнений: ручные правки строк BOM отменяются, порядок и позиции — по ГОСТ (строки, добавленные вручную, остаются)", OnReload));
+            ToolStripButton saveBtn = Btn("Сохранить изменения", "Записать исправленные раздел, формат, обозначение, наименование, примечание и количество в 3D-модели, " +
+                "затем перечитать BOM: строки с одинаковым обозначением (наименованием) сливаются, количества пересчитываются", OnSave);
+            saveBtn.Enabled = save != null;
+            ts.Items.Add(saveBtn);
             ts.Items.Add(new ToolStripSeparator());
             ts.Items.Add(Btn("Добавить исполнение (3D-модель)…", "Добавить в групповую спецификацию ещё одно исполнение — сборку (.iam); её BOM станет отдельной графой «Кол. на исполн.»", OnAddExecution));
 
@@ -142,8 +151,8 @@ namespace GroupSpecB
             showHidden = new CheckBox { Text = "Показывать строки, исключённые из спецификации", Dock = DockStyle.Bottom, Checked = true, Height = 24 };
             showHidden.CheckedChanged += (s, e) => FillGrid();
             Label hint = new Label { Dock = DockStyle.Bottom, Height = 66, ForeColor = Color.DimGray,
-                Text = "Белые строки — из BOM исполнений, жёлтые — добавленные вручную. Жирным — исправлено вручную (не перезаписывается при обновлении из BOM; после записи в 3D-модель выделение снимается).\r\n" +
-                       "«Документация» — X в графах исполнений. Знак $ в тексте — конец строки (не влезающая строка сжимается). Изменения в 3D-модели (раздел, формат, обозначение, наименование, примечание, количество — в параметр количества детали или в BOM сборки, позиции BOM) вносятся только по кнопке «Сформировать».\r\n" +
+                Text = "Белые строки — из BOM исполнений, жёлтые — добавленные вручную. Жирным — исправлено вручную (после записи в 3D-модель выделение снимается; «Загрузить из BOM» отменяет правки).\r\n" +
+                       "«Документация» — X в графах исполнений. Знак $ в тексте — конец строки (не влезающая строка сжимается). Раздел, формат, обозначение, наименование, примечание, количество (в параметр количества детали или в BOM сборки) записываются в 3D-модели кнопками «Сохранить изменения» и «Сформировать», позиции BOM — только «Сформировать».\r\n" +
                        "Серые строки «свободная строка» — пустые строки листа между разделами; удалить — Delete или «Удалить» (только в этом чертеже, параметры не меняются)." };
             tpSpec.Controls.Add(grid);
             tpSpec.Controls.Add(showHidden);
@@ -524,6 +533,27 @@ namespace GroupSpecB
             }
             finally { Cursor = Cursors.Default; }
             LoadAll();
+        }
+
+        void OnReload(object sender, EventArgs e)
+        {
+            Commit();
+            if (MessageBox.Show(this, "Загрузить все данные заново из 3D-моделей?\r\n\r\nВсе исправления строк BOM, флажки «В СП», порядок строк и номера позиций " +
+                    "будут отменены. Строки, добавленные вручную, останутся.", Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+            SpecLogic.DiscardEdits(data);
+            OnRefresh(sender, e);
+        }
+
+        void OnSave(object sender, EventArgs e)
+        {
+            Commit();
+            Cursor = Cursors.WaitCursor;
+            string err;
+            try { err = save(SetStatus); }
+            finally { Cursor = Cursors.Default; }
+            LoadAll();
+            if (err != null) MessageBox.Show(this, err, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            else SetStatus("Изменения записаны в 3D-модели, строки спецификации перечитаны из BOM.");
         }
 
         void OnAddExecution(object sender, EventArgs e)
