@@ -66,9 +66,15 @@ namespace GroupSpecB
                 {
                     if (key.StartsWith("virtual:"))
                     {
-                        if (r.IsEdited("Designation") || r.IsEdited("Name") || r.IsEdited("Format") || r.IsEdited("Note"))
-                            failed.Add(Name(r) + " — виртуальный компонент: исправьте его в сборке");
-                        desOk = nameOk = secOk = fmtOk = noteOk = false;
+                        // свойства виртуального компонента хранятся в сборках исполнений
+                        int vProps;
+                        string err = WriteVirtual(app, data, r, key, title, out vProps);
+                        if (err == null) { if (vProps < 0) same++; else { written++; props += vProps; } }
+                        else
+                        {
+                            failed.Add(Name(r) + " — виртуальный компонент: " + err);
+                            desOk = nameOk = secOk = fmtOk = noteOk = false;
+                        }
                         continue;
                     }
                     Document d = null;
@@ -86,20 +92,7 @@ namespace GroupSpecB
                             desOk = nameOk = secOk = fmtOk = noteOk = false;
                             continue;
                         }
-                        List<string[]> changes = new List<string[]>();   // {набор, свойство, значение}
-                        if (UserProp(d.PropertySets, SectionProp) != r.Section) changes.Add(new[] { UserDefined, SectionProp, r.Section });
-                        if (r.IsEdited("Designation") && Prop(d.PropertySets, DesignTracking, "Part Number") != r.Designation)
-                            changes.Add(new[] { DesignTracking, "Part Number", r.Designation });
-                        if (r.IsEdited("Name"))
-                        {
-                            if (title && Prop(d.PropertySets, Summary, "Title") != r.Name) changes.Add(new[] { Summary, "Title", r.Name });
-                            if (!title && Prop(d.PropertySets, DesignTracking, "Description") != r.Name) changes.Add(new[] { DesignTracking, "Description", r.Name });
-                        }
-                        // формат и примечание читаются из пользовательских свойств (ReadBom)
-                        if (r.IsEdited("Format") && Sections.HasFormat(r.Section) && UserProp(d.PropertySets, "LastFormat", "Формат") != r.Format)
-                            changes.Add(new[] { UserDefined, "LastFormat", r.Format });
-                        if (r.IsEdited("Note") && UserProp(d.PropertySets, "Примечание") != r.Note)
-                            changes.Add(new[] { UserDefined, "Примечание", r.Note });
+                        List<string[]> changes = Changes(d.PropertySets, r, title);
                         if (changes.Count == 0) { same++; continue; }
 
                         if (!d.IsModifiable)
@@ -127,14 +120,7 @@ namespace GroupSpecB
                             continue;
                         }
                         bool wasDirty = d.Dirty;
-                        foreach (string[] c in changes)
-                        {
-                            PropertySet ps = d.PropertySets[c[0]];
-                            Property p = null;
-                            foreach (Property x in ps) if (x.Name == c[1]) { p = x; break; }
-                            if (p != null) p.Value = c[2]; else ps.Add(c[2], c[1]);
-                            if (c[1] != SectionProp) props++;
-                        }
+                        props += Apply(d.PropertySets, changes);
                         written++;
                         if (!wasDirty)
                         {
@@ -165,6 +151,121 @@ namespace GroupSpecB
             if (failed.Count > 0) rep += "\r\nНе записано:\r\n" + string.Join("\r\n", failed);
             return rep;
         }
+        /// <summary>Свойства, которые нужно изменить, чтобы модель совпала со строкой спецификации:
+        /// {набор, свойство, значение}.</summary>
+        static List<string[]> Changes(PropertySets sets, SpecRow r, bool title)
+        {
+            List<string[]> changes = new List<string[]>();
+            if (UserProp(sets, SectionProp) != r.Section) changes.Add(new[] { UserDefined, SectionProp, r.Section });
+            if (r.IsEdited("Designation") && Prop(sets, DesignTracking, "Part Number") != r.Designation)
+                changes.Add(new[] { DesignTracking, "Part Number", r.Designation });
+            if (r.IsEdited("Name"))
+            {
+                if (title && Prop(sets, Summary, "Title") != r.Name) changes.Add(new[] { Summary, "Title", r.Name });
+                if (!title && Prop(sets, DesignTracking, "Description") != r.Name) changes.Add(new[] { DesignTracking, "Description", r.Name });
+            }
+            // формат и примечание читаются из пользовательских свойств (ReadBom)
+            if (r.IsEdited("Format") && Sections.HasFormat(r.Section) && UserProp(sets, "LastFormat", "Формат") != r.Format)
+                changes.Add(new[] { UserDefined, "LastFormat", r.Format });
+            if (r.IsEdited("Note") && UserProp(sets, "Примечание") != r.Note)
+                changes.Add(new[] { UserDefined, "Примечание", r.Note });
+            return changes;
+        }
+
+        /// <summary>Записывает свойства; возвращает число исправленных (кроме spec_section).</summary>
+        static int Apply(PropertySets sets, List<string[]> changes)
+        {
+            int n = 0;
+            foreach (string[] c in changes)
+            {
+                PropertySet ps = sets[c[0]];
+                Property p = null;
+                foreach (Property x in ps) if (x.Name == c[1]) { p = x; break; }
+                if (p != null) p.Value = c[2]; else ps.Add(c[2], c[1]);
+                if (c[1] != SectionProp) n++;
+            }
+            return n;
+        }
+
+        /// <summary>Записывает свойства виртуального компонента во все сборки включённых исполнений, где он есть
+        /// в BOM. Ключ строки содержит обозначение — после его исправления ключ строки обновляется.
+        /// props — число исправленных свойств, -1 — менять нечего. Возвращает ошибку или null.</summary>
+        static string WriteVirtual(Application app, SpecData data, SpecRow r, string key, bool title, out int props)
+        {
+            props = -1;
+            List<string> files = new List<string>();
+            foreach (Execution ex in data.EnabledExecutions())
+            {
+                string f = ex.Path ?? "";
+                if (f.IndexOf('<') > 0) f = f.Substring(0, f.IndexOf('<'));
+                if (f != "" && !files.Exists(x => string.Equals(x, f, StringComparison.OrdinalIgnoreCase))) files.Add(f);
+            }
+            bool found = false;
+            string newKey = null;
+            List<string> errors = new List<string>();
+            foreach (string file in files)
+            {
+                bool opened = false;
+                AssemblyDocument asm = null;
+                try
+                {
+                    asm = OpenAssembly(app, file, out opened);
+                    Document doc = (Document)asm;
+                    bool wasDirty = doc.Dirty;
+                    int n = WriteVirtualRows(asm, r, key, title, ref found, ref newKey);
+                    if (n < 0) continue;
+                    if (props < 0) props = 0;
+                    props += n;
+                    if (wasDirty) errors.Add("записано в " + System.IO.Path.GetFileName(file) + ", но в сборке были несохранённые изменения — сохраните её сами");
+                    else asm.Save2(false);
+                }
+                catch (Exception ex) { errors.Add(System.IO.Path.GetFileName(file) + ": " + ex.Message); }
+                finally { if (opened && asm != null) try { ((Document)asm).Close(true); } catch { } }
+            }
+            if (newKey != null && newKey != key)
+            {
+                if (r.Key == key) r.Key = newKey;
+                else { int i = r.MergedKeys.IndexOf(key); if (i >= 0) r.MergedKeys[i] = newKey; }
+            }
+            if (!found && errors.Count == 0) errors.Add("не найден в BOM сборок исполнений");
+            return errors.Count == 0 ? null : string.Join("; ", errors);
+        }
+
+        /// <summary>Строки BOM сборки с этим виртуальным компонентом: записывает свойства. Возвращает число
+        /// исправленных свойств, -1 — компонента нет или менять нечего.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static int WriteVirtualRows(AssemblyDocument asm, SpecRow r, string key, bool title, ref bool found, ref string newKey)
+        {
+            BOM bom = asm.ComponentDefinition.BOM;
+            if (!bom.StructuredViewEnabled) bom.StructuredViewEnabled = true;
+            int n = -1;
+            // свойства виртуального компонента — общие для всех состояний модели
+            ModelStates ms = null;
+            bool scopeSet = false;
+            MemberEditScopeEnum oldScope = MemberEditScopeEnum.kEditActiveMember;
+            try { ms = asm.ComponentDefinition.ModelStates; if (ms.Count > 1) { oldScope = ms.MemberEditScope; ms.MemberEditScope = MemberEditScopeEnum.kEditAllMembers; scopeSet = true; } } catch { }
+            try
+            {
+                foreach (BOMRow row in StructuredView(bom).BOMRows)
+                {
+                    if (!string.Equals(RowKey(row), key, StringComparison.OrdinalIgnoreCase)) continue;
+                    found = true;
+                    foreach (ComponentDefinition def in row.ComponentDefinitions)
+                    {
+                        if (def.Type != ObjectTypeEnum.kVirtualComponentDefinitionObject) continue;
+                        VirtualComponentDefinition vd = (VirtualComponentDefinition)def;
+                        List<string[]> changes = Changes(vd.PropertySets, r, title);
+                        if (changes.Count == 0) continue;
+                        if (n < 0) n = 0;
+                        n += Apply(vd.PropertySets, changes);
+                    }
+                    newKey = RowKey(row);
+                }
+            }
+            finally { if (scopeSet) try { ms.MemberEditScope = oldScope; } catch { } }
+            return n;
+        }
+
         /// <summary>Файл фабрики для члена iPart / iAssembly, иначе null.</summary>
         public static string FactoryPath(Document d)
         {
