@@ -38,6 +38,7 @@ static class UnitTests
         Run("Тип спецификации по числу 3D-моделей", SpecTypeAuto);
         Run("Спецификация по ГОСТ 2.106", Gost2106);
         Run("Свободные строки между разделами", Gaps);
+        Run("Повторное чтение BOM, сохранение и загрузка из BOM", Reload);
         Console.WriteLine("Пройдено: " + passed + ", ошибок: " + failed);
         return failed == 0 ? 0 : 1;
     }
@@ -97,6 +98,54 @@ static class UnitTests
         Eq("АБВГ.123456.789", SpecLogic.WithoutExecution("АБВГ.123456.789-01"), "обозначение фабрики без «-01»");
         Eq("АБВГ.123456.789", SpecLogic.WithoutExecution("АБВГ.123456.789"), "основное исполнение не меняется");
         Eq("DIN 6921-8", SpecLogic.WithoutExecution("DIN 6921-8"), "«DIN 6921-8» не меняется");
+    }
+
+    static void Reload()
+    {
+        Execution e = Exec("АБВГ.100000.001");
+        SpecData data = Merge(Bom(e,
+            Item("a.ipt", "АБВГ.200000.001", "Деталь А", Sections.Parts, "1"),
+            Item("b.ipt", "АБВГ.200000.002", "Деталь Б", Sections.Parts, "2"),
+            Item("c.ipt", "АБВГ.200000.003", "Деталь В", Sections.Parts, "1")));
+        SpecRow a = data.Rows.Find(r => r.Key == "a.ipt"), b = data.Rows.Find(r => r.Key == "b.ipt"), c = data.Rows.Find(r => r.Key == "c.ipt");
+        Eq("1", a.Pos, "новая спецификация нумеруется");
+        Eq("3", c.Pos, "новая спецификация нумеруется: В");
+
+        // при открытии редактора (повторное чтение BOM) позиции не перенумеровываются
+        a.Pos = "7";
+        SpecLogic.Merge(data, new List<ExecutionBom> { Bom(e,
+            Item("new.ipt", "АБВГ.200000.000", "Деталь Н", Sections.Parts, "1"),
+            Item("a.ipt", "АБВГ.200000.001", "Деталь А", Sections.Parts, "1"),
+            Item("b.ipt", "АБВГ.200000.002", "Деталь Б", Sections.Parts, "2"),
+            Item("c.ipt", "АБВГ.200000.003", "Деталь В", Sections.Parts, "1")) });
+        Eq("7", a.Pos, "позиция при повторном чтении сохраняется");
+        SpecRow n = data.Rows.Find(r => r.Key == "new.ipt");
+        Eq("", n.Pos, "новая строка — без позиции до «Перенумеровать»");
+        Eq(data.Rows.Count - 1, data.Rows.IndexOf(n), "новая строка — в конце раздела");
+
+        // «Сохранить изменения»: обозначение Б записано в модель как у А — строки сливаются, количество суммируется
+        SpecLogic.Merge(data, new List<ExecutionBom> { Bom(e,
+            Item("new.ipt", "АБВГ.200000.000", "Деталь Н", Sections.Parts, "1"),
+            Item("a.ipt", "АБВГ.200000.001", "Деталь А", Sections.Parts, "1"),
+            Item("b.ipt", "АБВГ.200000.001", "Деталь А", Sections.Parts, "2"),
+            Item("c.ipt", "АБВГ.200000.003", "Деталь В", Sections.Parts, "1")) });
+        Check(!data.Rows.Contains(b), "строка Б слита со строкой А");
+        Eq("3", a.GetQty(e.Key), "количество слитой строки пересчитано");
+        Eq(1, a.MergedKeys.Count, "файл Б — в MergedKeys строки А");
+
+        // «Загрузить из BOM»: правки отменяются, порядок и позиции — заново
+        c.Name = "Исправлено"; c.MarkEdited("Name"); c.Hidden = true;
+        data.Rows.Add(new SpecRow { Source = RowSource.Manual, Section = Sections.Documentation, Designation = "АБВГ.100000.001 ПЗ" });
+        SpecLogic.DiscardEdits(data);
+        SpecLogic.Merge(data, new List<ExecutionBom> { Bom(e,
+            Item("new.ipt", "АБВГ.200000.000", "Деталь Н", Sections.Parts, "1"),
+            Item("a.ipt", "АБВГ.200000.001", "Деталь А", Sections.Parts, "1"),
+            Item("c.ipt", "АБВГ.200000.003", "Деталь В", Sections.Parts, "1")) });
+        SpecRow c2 = data.Rows.Find(r => r.Key == "c.ipt");
+        Eq("Деталь В", c2.Name, "ручная правка отменена");
+        Check(!c2.Hidden, "флажок «В СП» возвращён");
+        Eq("1", data.Rows.Find(r => r.Key == "new.ipt").Pos, "позиции заново по ГОСТ");
+        Check(data.Rows.Exists(r => r.Designation == "АБВГ.100000.001 ПЗ"), "строка, добавленная вручную, осталась");
     }
 
     static void FormatQty()

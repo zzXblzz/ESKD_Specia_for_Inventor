@@ -103,6 +103,25 @@ namespace GroupSpecB
             }
             catch (Exception ex) { Log.Write("Чтение BOM", ex); return "Ошибка чтения BOM: " + ex.Message; }
         }
+
+        /// <summary>«Сохранить изменения»: исправленные в редакторе раздел, формат, обозначение, наименование,
+        /// примечание и количества записываются в 3D-модели (как по кнопке «Сформировать»), затем BOM
+        /// перечитывается — строки с одинаковым обозначением (наименованием) сливаются, количества
+        /// пересчитываются. Возвращает отчёт о том, что не записано, или null.</summary>
+        public string SaveToModel(Action<string> progress)
+        {
+            List<string> reports = new List<string>();
+            string r;
+            try { r = BomCollector.WriteModelProperties(App, Data, progress); }
+            catch (Exception ex) { Log.Write("Запись в модели", ex); r = "Запись в модели: ошибка — " + ex.Message; }
+            if (r.Contains("Не записано") || r.Contains("ошибка") || r.Contains("сохраните")) reports.Add(r);
+            try { r = BomQuantity.Write(App, Data, progress); }
+            catch (Exception ex) { Log.Write("Количество в моделях", ex); r = "Количество в моделях: ошибка — " + ex.Message; }
+            if (r.Contains("не записано") || r.Contains("ошибка") || r.Contains("сохраните")) reports.Add(r);
+            string warn = Refresh(progress);
+            if (warn != null) reports.Add(warn);
+            return reports.Count == 0 ? null : string.Join("\r\n\r\n", reports);
+        }
     }
 
     /// <summary>Команда «Спецификация»: из параметрической сборки создаёт чертёж со спецификацией,
@@ -166,7 +185,7 @@ namespace GroupSpecB
                 try { titleState = SpecTitleBlock.Resolve(model, dwg, data.Settings); }
                 finally { if (mOpened && model != null) try { model.Close(true); } catch { } }
             }
-            EditorForm form = new EditorForm(data, session.Refresh, titleState);
+            EditorForm form = new EditorForm(data, session.Refresh, session.SaveToModel, titleState);
             form.Shown += (s, e) =>
             {
                 if (warn != null) MessageBox.Show(form, warn, Title, MessageBoxButtons.OK, MessageBoxIcon.Information);

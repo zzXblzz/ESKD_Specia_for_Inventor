@@ -96,9 +96,12 @@ namespace GroupSpecB
             return 0;
         }
 
-        /// <summary>Сводит BOM исполнений в данные спецификации, сохраняя ручные правки.</summary>
+        /// <summary>Сводит BOM исполнений в данные спецификации, сохраняя ручные правки. Порядок записи и
+        /// номера позиций назначаются только новой спецификации (в данных ещё нет строк BOM, в т. ч. после
+        /// «Загрузить из BOM»).</summary>
         public static void Merge(SpecData data, List<ExecutionBom> boms)
         {
+            bool fresh = !data.Rows.Exists(r => r.Source == RowSource.Bom);
             // Графы исполнений — по возрастанию номера исполнения («–» — основное — первым).
             StableSort(boms, (a, b) => ExecutionNumber(a.Execution).CompareTo(ExecutionNumber(b.Execution)));
             // Исполнения: сохраняем включение и подписи уже известных исполнений.
@@ -197,12 +200,33 @@ namespace GroupSpecB
             rows.AddRange(added);
             data.Rows = rows;
             EnsureAssemblyDrawingRow(data);
-            if (data.ManualOrder)
+            if (!fresh)
+            {
+                // спецификация уже была: порядок строк и номера позиций не меняются (новые строки — в конце
+                // своего раздела, без позиции) — перенумерация только по кнопке «Перенумеровать»
+                GroupBySection(data);
+            }
+            else if (data.ManualOrder)
             {
                 GroupBySection(data);
                 Renumber(data);
             }
             else SortAndNumber(data);
+        }
+
+        /// <summary>«Загрузить из BOM»: отменяет ручные правки — строки BOM удаляются и при следующем чтении BOM
+        /// создаются заново из 3D-моделей (графы, количества, флажок «В СП», порядок, позиции). У строки
+        /// «Сборочный чертеж» снимаются правки; строки, добавленные вручную (документы, материалы), остаются.</summary>
+        public static void DiscardEdits(SpecData data)
+        {
+            data.Rows.RemoveAll(r => r.Source == RowSource.Bom);
+            foreach (SpecRow r in data.Rows)
+            {
+                if (r.Key != AsmDrawingKey) continue;
+                r.Edited.Clear();
+                r.Hidden = false;
+            }
+            data.ManualOrder = false;
         }
 
         static string Norm(string s)
