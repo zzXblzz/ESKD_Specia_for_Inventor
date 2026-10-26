@@ -40,6 +40,7 @@ static class UnitTests
         Run("Спецификация по ГОСТ 2.106", Gost2106);
         Run("Свободные строки между разделами", Gaps);
         Run("Повторное чтение BOM, сохранение и загрузка из BOM", Reload);
+        Run("Ссылки «поз.» в текстах чертежа", PosRefs);
         Console.WriteLine("Пройдено: " + passed + ", ошибок: " + failed);
         return failed == 0 ? 0 : 1;
     }
@@ -99,6 +100,29 @@ static class UnitTests
         Eq("АБВГ.123456.789", SpecLogic.WithoutExecution("АБВГ.123456.789-01"), "обозначение фабрики без «-01»");
         Eq("АБВГ.123456.789", SpecLogic.WithoutExecution("АБВГ.123456.789"), "основное исполнение не меняется");
         Eq("DIN 6921-8", SpecLogic.WithoutExecution("DIN 6921-8"), "«DIN 6921-8» не меняется");
+    }
+
+    static void PosRefs()
+    {
+        Dictionary<string, string> map = new Dictionary<string, string> { { "12", "14" }, { "14", "16" }, { "3", "5" }, { "5", "7" }, { "2", "9" } };
+        Func<string, string> R = s => PosRefText.Replace(s, map, null);
+        Eq("Болты поз.14 затянуть", R("Болты поз.12 затянуть"), "одна позиция");
+        Eq("поз.14,16", R("поз.12,14"), "без цепочки 12→14→16");
+        Eq("Поз. 14, 16 и 5", R("Поз. 12, 14 и 3"), "пробелы, «и», заглавная");
+        Eq("поз.5-7", R("поз.3-5"), "диапазон");
+        Eq("позиции 14", R("позиции 12"), "«позиции»");
+        Eq("поз.14, 2 шт.", R("поз.12, 2 шт."), "количество после позиции не меняется");
+        Eq("поз.12а, M12, 12 мм", R("поз.12а, M12, 12 мм"), "«12а» и числа без «поз.» не меняются");
+        Eq("спозиция 12", R("спозиция 12"), "«поз» внутри слова");
+        Eq("поз.7 (поз.33)", R("поз.5 (поз.33)"), "номер без замены остаётся");
+        Eq("<StyleOverride Bold='True'>поз.</StyleOverride>14,<Br/>16", R("<StyleOverride Bold='True'>поз.</StyleOverride>12,<Br/>14"),
+           "теги форматирования между «поз.» и номерами");
+        Eq("поз.&#160;14", R("поз.&#160;12"), "неразрывный пробел");
+        string same = "Размеры для справок";
+        Check(ReferenceEquals(same, R(same)), "без ссылок — тот же текст");
+        List<string> used = new List<string>();
+        PosRefText.Replace("поз.12, 33 и 3", map, used);
+        Eq("12,3", string.Join(",", used), "заменённые номера");
     }
 
     static void Reload()

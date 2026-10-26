@@ -21,6 +21,33 @@ namespace GroupSpecB
         /// <summary>Перенумеровывает BOM сборок всех включённых исполнений. Возвращает отчёт.</summary>
         public static string Renumber(Application app, SpecData data, Action<string> progress)
         {
+            Dictionary<string, string> posMap;
+            return Renumber(app, data, progress, out posMap);
+        }
+
+        /// <summary>То же; posMap — какие номера позиций BOM поменялись (старый → новый), для ссылок «поз.»
+        /// на листах чертежа. Если в разных сборках один старый номер получил разные новые, берётся
+        /// первая сборка (базовое исполнение), расхождение — в отчёте.</summary>
+        public static string Renumber(Application app, SpecData data, Action<string> progress, out Dictionary<string, string> posMap)
+        {
+            map = new Dictionary<string, string>();
+            mapConflicts = new Dictionary<string, List<string>>();
+            try { return RenumberAll(app, data, progress); }
+            finally
+            {
+                posMap = new Dictionary<string, string>();
+                foreach (KeyValuePair<string, string> p in map) if (p.Key != p.Value) posMap[p.Key] = p.Value;
+                map = null; mapConflicts = null;
+            }
+        }
+
+        // старый номер → новый за время Renumber (метод вызывается из одного потока — команды Inventor)
+        static Dictionary<string, string> map;
+        static Dictionary<string, List<string>> mapConflicts;
+        static bool record = true;
+
+        static string RenumberAll(Application app, SpecData data, Action<string> progress)
+        {
             Dictionary<string, string> posByKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (SpecRow r in data.Rows)
             {
@@ -45,6 +72,9 @@ namespace GroupSpecB
             string rep = "Позиции BOM: перенумеровано сборок — " + docs +
                          (unchanged > 0 ? ", уже совпадали — " + unchanged : "") +
                          ", строк BOM с номером из спецификации — " + changedRows + ".";
+            foreach (KeyValuePair<string, List<string>> c in mapConflicts)
+                notes.Add("Номер позиции " + c.Key + " в разных сборках стал разным (" + string.Join(", ", c.Value) +
+                          ") — в ссылках «поз.» на листах взят " + map[c.Key] + ".");
             if (notes.Count > 0) rep += "\r\n" + string.Join("\r\n", notes);
             return rep;
         }
@@ -143,7 +173,10 @@ namespace GroupSpecB
                             ms[s].Activate();
                             asm.Update();
                             bool c;
-                            numbered = Math.Max(numbered, NumberView(bom, posByKey, notes, System.IO.Path.GetFileName(t.Path) + " <" + s + ">", out c));
+                            // номера общие для всех состояний: после первого в BOM уже новые, старые — только в первом
+                            record = s == t.States[0];
+                            try { numbered = Math.Max(numbered, NumberView(bom, posByKey, notes, System.IO.Path.GetFileName(t.Path) + " <" + s + ">", out c)); }
+                            finally { record = true; }
                             changed |= c;
                         }
                     }
@@ -308,9 +341,12 @@ namespace GroupSpecB
                 if (desired[i] != null) { plan.Add(desired[i]); count++; }
                 else { next++; plan.Add(next.ToString()); }
             }
-            for (int i = 0; i < rows.Count && !changed; i++)
+            for (int i = 0; i < rows.Count; i++)
             {
-                if (rows[i].ItemNumber != plan[i]) changed = true;
+                string old = rows[i].ItemNumber;
+                Remember(old, plan[i]);
+                if (changed) continue;
+                if (old != plan[i]) changed = true;
                 else if (desired[i] != null) { try { if (!rows[i].ItemNumberLocked) changed = true; } catch { } }
             }
             if (!changed) return count;
@@ -336,6 +372,17 @@ namespace GroupSpecB
                 }
             }
             return count;
+        }
+
+        static void Remember(string old, string now)
+        {
+            if (map == null || !record || string.IsNullOrEmpty(old) || string.IsNullOrEmpty(now)) return;
+            string was;
+            if (!map.TryGetValue(old, out was)) { map[old] = now; return; }
+            if (was == now) return;
+            List<string> c;
+            if (!mapConflicts.TryGetValue(old, out c)) { c = new List<string> { was }; mapConflicts[old] = c; }
+            if (!c.Contains(now)) c.Add(now);
         }
     }
 }

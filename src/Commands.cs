@@ -28,7 +28,7 @@ namespace GroupSpecB
             App = app; Data = data; Drawing = drawing; AssemblyPath = assemblyPath;
         }
 
-        static bool IsSpecSheet(Sheet sh)
+        public static bool IsSpecSheet(Sheet sh)
         {
             try { return sh.AttributeSets.NameIsUsed[DrawingWriter.SheetAttrSet]; } catch { return false; }
         }
@@ -223,9 +223,10 @@ namespace GroupSpecB
 
             // номера позиций BOM родительских сборок = позиции спецификации
             string bomReport = null;
+            Dictionary<string, string> posMap = null;
             if (data.Settings.RenumberAssemblyBom)
             {
-                try { bomReport = BomNumbering.Renumber(app, data, s => { try { app.StatusBarText = s; } catch { } }); }
+                try { bomReport = BomNumbering.Renumber(app, data, s => { try { app.StatusBarText = s; } catch { } }, out posMap); }
                 catch (Exception ex) { bomReport = "Позиции BOM: ошибка — " + ex.Message; }
             }
 
@@ -247,11 +248,18 @@ namespace GroupSpecB
             }
             catch (Exception ex) { titleReport = "Основная надпись: " + ex.Message; }
             List<string> layoutWarnings = new List<string>();
+            string posRefReport = null;
             bool screen = app.ScreenUpdating;
             Transaction tr = app.TransactionManager.StartTransaction((_Document)dwg, "Спецификация");
             try
             {
                 app.ScreenUpdating = false;
+                // ссылки «поз.12» в текстах листов — на новые номера (в новом чертеже их нет)
+                if (!created && data.Settings.UpdatePosRefs && posMap != null && posMap.Count > 0)
+                {
+                    try { posRefReport = DrawingPosRefs.Update(dwg, posMap); }
+                    catch (Exception ex) { Log.Write("Ссылки поз.", ex); posRefReport = "Ссылки «поз.» на листах: ошибка — " + ex.Message; }
+                }
                 DrawingWriter writer = new DrawingWriter(app, dwg, data) { RemoveEmptySheets = created };
                 int n = writer.Write(s => { try { app.StatusBarText = s; } catch { } });
                 layoutWarnings.AddRange(writer.Warnings);
@@ -269,6 +277,7 @@ namespace GroupSpecB
             if (sectionReport != null && (sectionReport.Contains("Не записано") || sectionReport.Contains("ошибка"))) reports.Add(sectionReport);
             if (qtyReport != null && (qtyReport.Contains("не записано") || qtyReport.Contains("ошибка") || qtyReport.Contains("сохраните"))) reports.Add(qtyReport);
             if (bomReport != null && bomReport.Contains("\r\n") || bomReport != null && bomReport.Contains("ошибка")) reports.Add(bomReport);
+            if (posRefReport != null) reports.Add(posRefReport);
             if (titleReport != null) reports.Add(titleReport);
             if (layoutWarnings.Count > 0) reports.Add(string.Join("\r\n", layoutWarnings));
             if (reports.Count > 0)
