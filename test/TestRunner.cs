@@ -27,9 +27,12 @@ static class TestRunner
                     data.Executions.Add(new Execution { Kind = BomCollector.KindFile, Path = args[i + 1], Key = args[i + 1], UserAdded = true });
 
             DrawingDocument dwg = null;
+            bool dwgWasOpen = false;
             SpecSession session;
-            if (input.EndsWith(".idw", StringComparison.OrdinalIgnoreCase))
+            if (input.EndsWith(".idw", StringComparison.OrdinalIgnoreCase) || input.EndsWith(".dwg", StringComparison.OrdinalIgnoreCase))
             {
+                foreach (Document od in app.Documents)
+                    if (string.Equals(od.FullFileName, input, StringComparison.OrdinalIgnoreCase)) dwgWasOpen = true;
                 dwg = (DrawingDocument)app.Documents.Open(input, true);
                 SpecData saved = DrawingWriter.LoadData(dwg);
                 if (saved != null) { saved.Executions.AddRange(data.Executions); data = saved; }
@@ -79,6 +82,9 @@ static class TestRunner
                 Console.WriteLine(BomCollector.WriteModelProperties(app, data, null));
                 Console.WriteLine("DrawingFormat=" + data.DrawingFormat + "  LastFormat: " + (data.DrawingFormat != "" ? (BomCollector.WriteAssemblyFormat(app, data) ?? "записан") : "-"));
             }
+            // --save — кнопка «Сохранить изменения» редактора: правки — в 3D-модели, затем BOM перечитывается
+            if (Array.IndexOf(args, "--save") >= 0)
+                Console.WriteLine("SAVE: " + (session.SaveToModel(s => Console.WriteLine("  " + s)) ?? "без замечаний"));
             if (Array.IndexOf(args, "--renumber") >= 0)
                 Console.WriteLine(BomNumbering.Renumber(app, data, s => Console.WriteLine("  " + s)));
             foreach (Execution e in data.Executions)
@@ -116,6 +122,14 @@ static class TestRunner
                     }
                 }
                 f.Close();
+            }
+
+            if (Array.IndexOf(args, "--save") >= 0)
+            {
+                // только запись в модели: чертёж не меняется, открытый пользователем — не закрывается
+                if (dwg != null && !dwgWasOpen) ((Document)dwg).Close(true);
+                Console.WriteLine("OK");
+                return 0;
             }
 
             bool created = dwg == null;

@@ -550,6 +550,7 @@ namespace GroupSpecB
             Cursor = Cursors.WaitCursor;
             string err;
             try { err = save(SetStatus); }
+            catch (Exception ex) { Log.Write("Сохранить изменения", ex); err = "Ошибка записи в 3D-модели: " + ex.Message; }
             finally { Cursor = Cursors.Default; }
             LoadAll();
             if (err != null) MessageBox.Show(this, err, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
