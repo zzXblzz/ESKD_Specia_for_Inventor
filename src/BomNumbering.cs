@@ -274,30 +274,19 @@ namespace GroupSpecB
         }
 
         /// <summary>Номера из спецификации для ещё не назначенных строк (activeOnly — только строки
-        /// с ненулевым количеством).</summary>
+        /// с ненулевым количеством). Несколько строк BOM, слитых в одну позицию спецификации (тот же
+        /// компонент в разных строках, одинаковое наименование без обозначения), получают один номер —
+        /// Inventor допускает повторяющиеся номера позиций.</summary>
         static void Collect(List<BOMRow> rows, string[] desired, bool activeOnly, Dictionary<string, string> posByKey,
                             List<string> notes, string where)
         {
-            bool[] active = new bool[rows.Count];
-            HashSet<string> taken = new HashSet<string>();
             for (int i = 0; i < rows.Count; i++)
             {
-                active[i] = true;
-                if (activeOnly) { try { active[i] = rows[i].ItemQuantity != 0; } catch { } }
-                if (active[i] && desired[i] != null) taken.Add(desired[i]);
-            }
-            for (int i = 0; i < rows.Count; i++)
-            {
-                if (desired[i] != null || !active[i]) continue;
+                if (desired[i] != null) continue;
+                if (activeOnly) { try { if (rows[i].ItemQuantity == 0) continue; } catch { } }
                 string key = BomCollector.RowKey(rows[i]);
                 string pos = null;
                 if (key != null) posByKey.TryGetValue(key, out pos);
-                if (pos != null && !taken.Add(pos))
-                {
-                    // тот же компонент в двух строках BOM — второй строке номер не достанется
-                    notes.Add(where + ": номер " + pos + " не назначен второй строке BOM того же компонента");
-                    pos = null;
-                }
                 desired[i] = pos;
             }
         }
