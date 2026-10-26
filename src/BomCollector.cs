@@ -327,7 +327,7 @@ namespace GroupSpecB
             return WriteUserProp(app, path, SectionProp, section);
         }
 
-        /// <summary>Записывает LastFormat (формат первого листа сборочного чертежа) в модели исполнений:
+        /// <summary>Записывает LastFormat «А4» (формат спецификации, как в ESKD Specia) в модели исполнений:
         /// в сам файл сборки, а для членов iAssembly — в фабрику. Возвращает текст ошибок или null.</summary>
         public static string WriteAssemblyFormat(Application app, SpecData data)
         {
@@ -352,10 +352,44 @@ namespace GroupSpecB
             }
             foreach (string p in paths)
             {
-                string err = WriteUserProp(app, p, "LastFormat", data.DrawingFormat);
+                string err = WriteUserProp(app, p, "LastFormat", SpecFormat);
                 if (err != null) errors.Add(System.IO.Path.GetFileName(p) + ": " + err);
             }
             return errors.Count == 0 ? null : "LastFormat не записан:\r\n" + string.Join("\r\n", errors);
+        }
+
+        /// <summary>Формат спецификации — LastFormat сборки (как в ESKD Specia).</summary>
+        public const string SpecFormat = "А4";
+
+        /// <summary>Формат листов чертежа для LastFormat, как в ESKD Specia (SaveFormatSize.GetSheetFormat): формат
+        /// первого листа, а если листы разного формата или формат нестандартный — «*)». Листы, исключённые из
+        /// нумерации, и листы спецификации надстройки не учитываются; «» — таких листов нет.</summary>
+        public static string DrawingSheetsFormat(DrawingDocument dwg)
+        {
+            string fmt = null;
+            foreach (Sheet sh in dwg.Sheets)
+            {
+                if (DrawingWriter.IsSpecSheet(sh) || sh.ExcludeFromCount) continue;
+                string f = DrawingWriter.SheetFormat(sh);
+                if (f == "" || (fmt != null && f != fmt)) return "*)";
+                fmt = f;
+            }
+            return fmt ?? "";
+        }
+
+        /// <summary>При сохранении чертежа, как в ESKD Specia (SaveFormatSize): LastFormat 3D-модели первого вида —
+        /// формат листов чертежа (см. DrawingSheetsFormat), для сборки — «А4» (формат спецификации); для члена
+        /// iPart/iAssembly — в фабрику. Совпадающее значение не перезаписывается. Возвращает текст ошибки или null.</summary>
+        public static string WriteDrawingFormat(Application app, DrawingDocument dwg)
+        {
+            Document model = SpecTitleBlock.FirstViewModel(dwg);
+            if (model == null) return null;
+            string fmt = model.DocumentType == DocumentTypeEnum.kAssemblyDocumentObject ? SpecFormat : DrawingSheetsFormat(dwg);
+            if (fmt == "") return null;
+            string p = FactoryPath(model) ?? model.FullFileName;
+            if (p.IndexOf('<') > 0) p = p.Substring(0, p.IndexOf('<'));
+            string err = WriteUserProp(app, p, "LastFormat", fmt);
+            return err == null ? null : "LastFormat не записан в " + System.IO.Path.GetFileName(p) + ": " + err;
         }
 
         /// <summary>Записывает пользовательское свойство и сохраняет документ, если в нём не было несохранённых правок.</summary>

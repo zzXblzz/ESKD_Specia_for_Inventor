@@ -173,7 +173,8 @@ namespace GroupSpecB
             }
         }
 
-        /// <summary>Перед сохранением чертежа: свойства материала и основной надписи (см. SyncTitle).</summary>
+        /// <summary>Перед сохранением чертежа: свойства материала и основной надписи (см. SyncTitle),
+        /// формат первого листа — в LastFormat модели.</summary>
         void OnSaveDocument(_Document doc, EventTimingEnum timing, NameValueMap context, out HandlingCodeEnum handling)
         {
             handling = HandlingCodeEnum.kEventNotHandled;
@@ -184,6 +185,12 @@ namespace GroupSpecB
                 DrawingDocument dwg = (DrawingDocument)doc;
                 UpdateMaterial(dwg, "Свойства материала при сохранении");
                 SyncTitle(dwg, "Свойства основной надписи при сохранении");
+                try
+                {
+                    string err = GlobalSettings.Load().WriteFormatToModel ? BomCollector.WriteDrawingFormat(app, dwg) : null;
+                    if (err != null) Log.Write(err);
+                }
+                catch (Exception ex) { Log.Write("LastFormat модели при сохранении чертежа", ex); }
             }
             catch (Exception ex) { Log.Write("Свойства основной надписи при сохранении", ex); }   // сохранение не должно срываться из-за надстройки
         }

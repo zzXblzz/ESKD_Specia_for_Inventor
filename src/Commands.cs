@@ -211,7 +211,7 @@ namespace GroupSpecB
             try { qtyReport = BomQuantity.Write(app, data, s => { try { app.StatusBarText = s; } catch { } }); }
             catch (Exception ex) { qtyReport = "Количество в моделях: ошибка — " + ex.Message; }
 
-            // LastFormat специфицируемой сборки = формат первого листа сборочного чертежа
+            // LastFormat специфицируемой сборки = «А4» (формат спецификации, как в ESKD Specia)
             if (!string.IsNullOrEmpty(data.DrawingFormat))
             {
                 string fr = BomCollector.WriteAssemblyFormat(app, data);
