@@ -79,6 +79,7 @@ namespace GroupSpecB
                     }
                     Document d = null;
                     bool opened = false;
+                    string step = "открытие файла";
                     try
                     {
                         d = FindOrOpen(app, key, out opened);
@@ -92,14 +93,28 @@ namespace GroupSpecB
                             desOk = nameOk = secOk = fmtOk = noteOk = false;
                             continue;
                         }
-                        List<string[]> changes = Changes(d.PropertySets, r, title);
+                        step = "проверка фабрики";
+                        string fp = FactoryPath(d);
+                        bool modifiable = fp == null;
+                        if (modifiable) { step = "проверка доступа"; modifiable = d.IsModifiable; }
+                        step = "чтение свойств";
+                        List<string[]> changes;
+                        try { changes = Changes(d.PropertySets, r, title); }
+                        catch (Exception ex)
+                        {
+                            if (fp == null) throw;
+                            // свойства члена iPart / iAssembly Inventor иногда не отдаёт (E_FAIL) — раздел всё равно
+                            // пишется в фабрику, остальное члену задаётся её таблицей
+                            Log.Write("Свойства члена " + key, ex);
+                            changes = Changes(null, r, title);
+                        }
                         if (changes.Count == 0) { same++; continue; }
 
-                        if (!d.IsModifiable)
+                        if (!modifiable)
                         {
                             // член iPart / iAssembly изменить нельзя: spec_section — в фабрику,
                             // обозначение и наименование члена задаются таблицей фабрики
-                            string fp = FactoryPath(d);
+                            step = "запись в фабрику";
                             foreach (string[] c in changes)
                             {
                                 if (c[1] == SectionProp && fp != null)
@@ -119,6 +134,7 @@ namespace GroupSpecB
                             }
                             continue;
                         }
+                        step = "запись свойств";
                         bool wasDirty = d.Dirty;
                         props += Apply(d.PropertySets, changes);
                         written++;
@@ -131,7 +147,8 @@ namespace GroupSpecB
                     }
                     catch (Exception ex)
                     {
-                        failed.Add(Name(r) + " — " + ex.Message);
+                        Log.Write("Запись в модель " + key + " (" + step + ")", ex);
+                        failed.Add(Name(r) + " — " + step + ": " + ex.Message);
                         desOk = nameOk = secOk = fmtOk = noteOk = false;
                     }
                     finally { if (opened && d != null) try { d.Close(true); } catch { } }
@@ -289,9 +306,17 @@ namespace GroupSpecB
         public static Document FindOrOpen(Application app, string path, out bool opened)
         {
             opened = false;
+            try { Document byName = app.Documents.ItemByName[path]; if (byName != null) return byName; } catch { }
             foreach (Document od in app.Documents)
-                if (string.Equals(od.FullDocumentName, path, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(od.FullFileName, path, StringComparison.OrdinalIgnoreCase)) return od;
+            {
+                // документ, который Inventor в этот момент выгружает, может не отдать имя (E_FAIL) — пропускаем
+                try
+                {
+                    if (string.Equals(od.FullDocumentName, path, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(od.FullFileName, path, StringComparison.OrdinalIgnoreCase)) return od;
+                }
+                catch { }
+            }
             opened = true;
             return app.Documents.Open(path, false);
         }
