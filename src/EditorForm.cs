@@ -126,8 +126,9 @@ namespace GroupSpecB
             BuildTitleTab(tpTitle);
 
             grid = new SpecGrid { Dock = DockStyle.Fill, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
-                SelectionMode = DataGridViewSelectionMode.CellSelect, RowHeadersWidth = 28,
+                SelectionMode = DataGridViewSelectionMode.RowHeaderSelect, MultiSelect = true, RowHeadersWidth = 28,
                 AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells };
+            grid.CellMouseDown += Grid_CellMouseDown;
             grid.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
             grid.CellValueChanged += Grid_CellValueChanged;
             grid.CurrentCellDirtyStateChanged += (s, e) =>
@@ -150,9 +151,10 @@ namespace GroupSpecB
             };
             showHidden = new CheckBox { Text = "Показывать строки, исключённые из спецификации", Dock = DockStyle.Bottom, Checked = true, Height = 24 };
             showHidden.CheckedChanged += (s, e) => FillGrid();
-            Label hint = new Label { Dock = DockStyle.Bottom, Height = 66, ForeColor = Color.DimGray,
+            Label hint = new Label { Dock = DockStyle.Bottom, Height = 82, ForeColor = Color.DimGray,
                 Text = "Белые строки — из BOM исполнений, жёлтые — добавленные вручную. Жирным — исправлено вручную (после записи в 3D-модель выделение снимается; «Загрузить из BOM» отменяет правки).\r\n" +
                        "«Документация» — X в графах исполнений. Знак $ в тексте — конец строки (не влезающая строка сжимается). Раздел, формат, обозначение, наименование, примечание, количество (в параметр количества детали или в BOM сборки) записываются в 3D-модели кнопками «Сохранить изменения» и «Сформировать», позиции BOM — только «Сформировать».\r\n" +
+                       "Несколько строк — Ctrl/Shift (по ячейкам или по заголовкам строк слева); правая кнопка — раздел для всех выделенных строк. " +
                        "Серые строки «свободная строка» — пустые строки листа между разделами; удалить — Delete или «Удалить» (только в этом чертеже, параметры не меняются)." };
             tpSpec.Controls.Add(grid);
             tpSpec.Controls.Add(showHidden);
@@ -466,6 +468,61 @@ namespace GroupSpecB
                 BeginInvoke((MethodInvoker)FillGrid);
             }
             else UpdateStatus();
+        }
+
+        /// <summary>Правая кнопка: по невыделенной строке — выделить её, по выделенной — оставить выделение
+        /// (несколько строк выделяются Ctrl/Shift), затем меню «Раздел» для всех выделенных строк.</summary>
+        void Grid_CellMouseDown(object sender, DataGridViewCellMouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right || e.RowIndex < 0) return;
+            Commit();
+            DataGridViewRow gr = grid.Rows[e.RowIndex];
+            bool selected = gr.Selected || (e.ColumnIndex >= 0 && gr.Cells[e.ColumnIndex].Selected);
+            if (!selected)
+            {
+                grid.ClearSelection();
+                if (e.ColumnIndex >= 0) grid.CurrentCell = gr.Cells[e.ColumnIndex];
+                else gr.Selected = true;
+            }
+            List<SpecRow> sel = SelectedRows();
+            if (sel.Count == 0) return;
+            ContextMenuStrip menu = SectionMenu(sel);
+            menu.Closed += (s2, e2) => BeginInvoke((MethodInvoker)menu.Dispose);
+            Rectangle cell = grid.GetCellDisplayRectangle(e.ColumnIndex, e.RowIndex, false);
+            menu.Show(grid, new Point(cell.X + e.X, cell.Y + e.Y));
+        }
+
+        ContextMenuStrip SectionMenu(List<SpecRow> sel)
+        {
+            ContextMenuStrip menu = new ContextMenuStrip();
+            ToolStripMenuItem head = new ToolStripMenuItem("Раздел (" + sel.Count + " стр.)") { Enabled = false };
+            menu.Items.Add(head);
+            menu.Items.Add(new ToolStripSeparator());
+            foreach (string s in Sections.Order)
+            {
+                string section = s;
+                ToolStripMenuItem it = new ToolStripMenuItem(section) { Checked = sel.TrueForAll(r => r.Section == section) };
+                it.Click += (s2, e2) => SetSection(sel, section);
+                menu.Items.Add(it);
+            }
+            return menu;
+        }
+
+        void SetSection(List<SpecRow> rows, string section)
+        {
+            int n = 0;
+            foreach (SpecRow r in rows)
+            {
+                if (r.Section == section) continue;
+                r.Section = section;
+                r.MarkEdited("Section");
+                n++;
+            }
+            if (n == 0) return;
+            SpecLogic.GroupBySection(data);
+            FillGrid();
+            SelectSpecRows(rows);
+            SetStatus("Раздел «" + section + "» назначен строкам: " + n + ". В 3D-модели — кнопкой «Сохранить изменения» или «Сформировать».");
         }
 
         void ExecGrid_CellValueChanged(object sender, DataGridViewCellEventArgs e)
