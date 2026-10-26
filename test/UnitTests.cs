@@ -35,6 +35,7 @@ static class UnitTests
         Run("Перенос по замеру текста", WrapMeasured);
         Run("Свойства материала в чертеже", Material);
         Run("Материал дробью в наименовании", MaterialInName);
+        Run("Масса и масштаб в чертеже", MassScale);
         Run("Тип спецификации по числу 3D-моделей", SpecTypeAuto);
         Run("Спецификация по ГОСТ 2.106", Gost2106);
         Run("Свободные строки между разделами", Gaps);
@@ -281,6 +282,26 @@ static class UnitTests
         Check(MaterialLogic.IsManual("См. чертёж"), "«см. …» — задано вручную");
         Check(!MaterialLogic.IsManual("Сталь 45"), "материал — не вручную");
         Check(!MaterialLogic.IsManual(""), "пусто — не вручную");
+    }
+
+    static void MassScale()
+    {
+        Eq("0,236", MassScaleLogic.FormatMass(0.2357), "до 1 кг — 3 знака");
+        Eq("0,5", MassScaleLogic.FormatMass(0.5), "0,5 кг без добавки Specia");
+        Eq("0,001", MassScaleLogic.FormatMass(0.0002), "лёгкая деталь — не 0");
+        Eq("0", MassScaleLogic.FormatMass(0), "нулевая масса");
+        Eq("1,25", MassScaleLogic.FormatMass(1.2512), "до 10 кг — 2 знака");
+        Eq("12,3", MassScaleLogic.FormatMass(12.34), "до 100 кг — 1 знак");
+        Eq("1235", MassScaleLogic.FormatMass(1234.6), "до 10 т — целые кг");
+        Eq("12,3т", MassScaleLogic.FormatMass(12345), "до 100 т — тонны");
+        Eq("123т", MassScaleLogic.FormatMass(123456), "от 100 т — целые тонны");
+        Eq("1:1", MassScaleLogic.FormatScale(1), "1:1");
+        Eq("2:1", MassScaleLogic.FormatScale(2), "увеличение");
+        Eq("2,5:1", MassScaleLogic.FormatScale(2.5), "увеличение 2,5");
+        Eq("1:2", MassScaleLogic.FormatScale(0.5), "уменьшение");
+        Eq("1:2,5", MassScaleLogic.FormatScale(0.4), "уменьшение 1:2,5");
+        Eq("1:3", MassScaleLogic.FormatScale(1.0 / 3), "1:3 без ошибки округления");
+        Eq("1:5", MassScaleLogic.FormatScale(0.2), "1:5");
     }
 
     static void MaterialInName()

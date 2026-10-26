@@ -73,6 +73,41 @@ namespace GroupSpecB
         }
     }
 
+    /// <summary>Масса и масштаб для основной надписи чертежа — как в ESKD Specia (PropertiesTools.CorrectMass,
+    /// CorrectScale): UserMass — масса модели первого вида в кг (от 10 т — в тоннах с «т»), UserScale — «1:2»,
+    /// «2:1». Десятичный разделитель — запятая. Без Inventor API (проверяется в UnitTests).</summary>
+    public static class MassScaleLogic
+    {
+        public const string Mass = "UserMass", Scale = "UserScale";
+        static readonly System.Globalization.CultureInfo Ru = new System.Globalization.CultureInfo("ru-RU");
+
+        /// <summary>Масса, кг: до 1 кг — 3 знака (но не 0 у ненулевой массы), до 10 — 2, до 100 — 1, до 10 т — целые,
+        /// до 100 т — тонны с 1 знаком, дальше — целые тонны. В Specia до 1 кг к массе прибавлялся 0,001
+        /// (0,5 кг → «0,501»), здесь округление обычное.</summary>
+        public static string FormatMass(double kg)
+        {
+            string unit = "";
+            double v;
+            if (kg >= 100000) { v = R(kg / 1000, 0); unit = "т"; }
+            else if (kg >= 10000) { v = R(kg / 1000, 1); unit = "т"; }
+            else if (kg >= 100) v = R(kg, 0);
+            else if (kg >= 10) v = R(kg, 1);
+            else if (kg >= 1) v = R(kg, 2);
+            else { v = R(kg, 3); if (v == 0 && kg > 0) v = 0.001; }
+            return v.ToString(Ru) + unit;
+        }
+
+        /// <summary>Масштаб вида: увеличение — «2:1», уменьшение — «1:2,5» (знаменатель до десятых, отбрасыванием).</summary>
+        public static string FormatScale(double scale)
+        {
+            if (scale <= 0) return "";
+            if (scale >= 1) return R(scale, 3).ToString(Ru) + ":1";
+            return "1:" + (Math.Floor(1 / scale * 10 + 1e-6) / 10).ToString(Ru);
+        }
+
+        static double R(double v, int digits) { return Math.Round(v, digits, MidpointRounding.AwayFromZero); }
+    }
+
     /// <summary>Материал дробью в графе «Наименование»: сортамент, над чертой — Up, под чертой — Down.</summary>
     public class MaterialFraction
     {

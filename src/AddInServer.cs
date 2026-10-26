@@ -188,7 +188,8 @@ namespace GroupSpecB
             catch (Exception ex) { Log.Write("Свойства основной надписи при сохранении", ex); }   // сохранение не должно срываться из-за надстройки
         }
 
-        /// <summary>Свойства материала в активном чертеже — после вставки/замены/удаления вида и окна iProperties.</summary>
+        /// <summary>Свойства материала, массы и масштаба в активном чертеже — после вставки/замены/удаления
+        /// и правки вида и окна iProperties.</summary>
         void OnTerminateCommand(string command, NameValueMap context)
         {
             if (Array.IndexOf(DrawingMaterial.Commands, command) < 0) return;
@@ -216,8 +217,11 @@ namespace GroupSpecB
         void UpdateMaterial(DrawingDocument dwg, string what)
         {
             if (dwg == null) return;
-            try { if (GlobalSettings.Load().FillMaterialProps) DrawingMaterial.Update(dwg); }
+            SpecSettings s = GlobalSettings.Load();
+            try { if (s.FillMaterialProps) DrawingMaterial.Update(dwg); }
             catch (Exception ex) { Log.Write(what, ex); }
+            try { if (s.FillMassScaleProps) DrawingMaterial.UpdateMassScale(dwg); }
+            catch (Exception ex) { Log.Write(what.Replace("материала", "массы и масштаба"), ex); }
         }
 
         void OnExecute(NameValueMap context)

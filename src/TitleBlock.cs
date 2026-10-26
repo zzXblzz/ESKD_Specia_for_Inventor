@@ -212,6 +212,13 @@ namespace GroupSpecB
         /// <summary>Модель первого вида чертежа (листы спецификации пропускаются) или null.</summary>
         public static Document FirstViewModel(DrawingDocument dwg)
         {
+            DrawingView v = FirstView(dwg);
+            return v != null ? (Document)v.ReferencedDocumentDescriptor.ReferencedDocument : null;
+        }
+
+        /// <summary>Первый вид чертежа с деталью или сборкой (листы спецификации пропускаются) или null.</summary>
+        public static DrawingView FirstView(DrawingDocument dwg)
+        {
             if (dwg == null) return null;
             foreach (Sheet sh in dwg.Sheets)
             {
@@ -222,7 +229,7 @@ namespace GroupSpecB
                     {
                         Document m = (Document)v.ReferencedDocumentDescriptor.ReferencedDocument;
                         if (m != null && (m.DocumentType == DocumentTypeEnum.kAssemblyDocumentObject ||
-                                          m.DocumentType == DocumentTypeEnum.kPartDocumentObject)) return m;
+                                          m.DocumentType == DocumentTypeEnum.kPartDocumentObject)) return v;
                     }
                     catch { }
                 }

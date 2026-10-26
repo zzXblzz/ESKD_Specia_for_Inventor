@@ -13,7 +13,7 @@ namespace GroupSpecB
 
         /// <summary>Команды, после которых свойства обновляются (как в Specia: AddPropertiesStart.OnTerminateCommand).</summary>
         public static readonly string[] Commands =
-            { "DrawingBaseViewCmd", "DrawingReplaceModelReferenceCmd", "AppDeleteCmd", "DrawingiPropertiesCmd" };
+            { "DrawingBaseViewCmd", "DrawingReplaceModelReferenceCmd", "AppDeleteCmd", "DrawingiPropertiesCmd", "DrawingViewEditCtxCmd" };
 
         /// <summary>Записывает свойства материала. Для чертежа детали недостающие свойства создаются; в чертеже
         /// без детали существующие очищаются. Вручную заданный SingleMaterial («-», «см. …») не трогается.</summary>
@@ -27,6 +27,33 @@ namespace GroupSpecB
             if (MaterialLogic.IsManual(single)) { v = MaterialLogic.Values(null); v[MaterialLogic.Single] = single; }
             else v = MaterialLogic.Values(part != null ? PartMaterial(part) : null);
             foreach (string n in MaterialLogic.All) Set(ps, n, v[n], part != null);
+        }
+
+        /// <summary>UserMass — масса модели первого вида (детали или сборки), UserScale — масштаб этого вида
+        /// (см. MassScaleLogic). Недостающие свойства создаются, если вид есть; без вида существующие очищаются.
+        /// Значение «-», «_» или «см. …» задано вручную и не перезаписывается.</summary>
+        public static void UpdateMassScale(DrawingDocument dwg)
+        {
+            PropertySet ps = ((Document)dwg).PropertySets[UserSet];
+            DrawingView view = SpecTitleBlock.FirstView(dwg);
+            string mass = "", scale = "";
+            if (view != null)
+            {
+                scale = MassScaleLogic.FormatScale(view.Scale);
+                Document model = (Document)view.ReferencedDocumentDescriptor.ReferencedDocument;
+                try { mass = MassScaleLogic.FormatMass(ModelMass(model)); }
+                catch (Exception ex) { Log.Write("Масса модели " + model.DisplayName, ex); mass = null; }
+            }
+            if (mass != null && !MaterialLogic.IsManual(Get(ps, MassScaleLogic.Mass))) Set(ps, MassScaleLogic.Mass, mass, view != null);
+            if (!MaterialLogic.IsManual(Get(ps, MassScaleLogic.Scale))) Set(ps, MassScaleLogic.Scale, scale, view != null);
+        }
+
+        /// <summary>Масса модели, кг (как Specia: ComponentDefinition.MassProperties.Mass).</summary>
+        public static double ModelMass(Document model)
+        {
+            if (model.DocumentType == DocumentTypeEnum.kPartDocumentObject)
+                return ((PartDocument)model).ComponentDefinition.MassProperties.Mass;
+            return ((AssemblyDocument)model).ComponentDefinition.MassProperties.Mass;
         }
 
         /// <summary>Имя материала детали (как Specia: ComponentDefinition.Material.Name).</summary>
