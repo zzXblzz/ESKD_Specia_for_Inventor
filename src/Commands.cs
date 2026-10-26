@@ -114,10 +114,11 @@ namespace GroupSpecB
             string r;
             try { r = BomCollector.WriteModelProperties(App, Data, progress); }
             catch (Exception ex) { Log.Write("Запись в модели", ex); r = "Запись в модели: ошибка — " + ex.Message; }
-            if (r.Contains("Не записано") || r.Contains("ошибка") || r.Contains("сохраните")) reports.Add(r);
+            if (r != null && (r.Contains("Не записано") || r.Contains("ошибка") || r.Contains("сохраните"))) reports.Add(r);
             try { r = BomQuantity.Write(App, Data, progress); }
             catch (Exception ex) { Log.Write("Количество в моделях", ex); r = "Количество в моделях: ошибка — " + ex.Message; }
-            if (r.Contains("не записано") || r.Contains("ошибка") || r.Contains("сохраните")) reports.Add(r);
+            // null — исправленных количеств нет
+            if (r != null && (r.Contains("не записано") || r.Contains("ошибка") || r.Contains("сохраните"))) reports.Add(r);
             string warn = Refresh(progress);
             if (warn != null) reports.Add(warn);
             return reports.Count == 0 ? null : string.Join("\r\n\r\n", reports);
