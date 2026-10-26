@@ -172,7 +172,7 @@ namespace GroupSpecB
             return pages.Count;
         }
 
-        static bool IsSpecSheet(Sheet sh)
+        public static bool IsSpecSheet(Sheet sh)
         {
             try { return sh.AttributeSets.NameIsUsed[SheetAttrSet]; } catch { return false; }
         }

@@ -261,6 +261,13 @@ namespace GroupSpecB
                      "сохранении и печати чертежа, после вставки и правки вида. Значение «-», «_» или «см. …» не перезаписывается.")]
         public bool FillMassScaleProps { get; set; }
 
+        [Category("1. Спецификация"), DisplayName("Формат листа в LastFormat модели"),
+         Description("Да — как в ESKD Specia: при сохранении чертежа в пользовательское свойство LastFormat 3D-модели первого " +
+                     "вида (для члена iPart/iAssembly — фабрики) записывается для сборки «А4», для детали — формат первого листа " +
+                     "(А3, А4х3…), а при листах разного или нестандартного формата — «*)». Модель сохраняется, " +
+                     "если в ней не было несохранённых правок. Совпадающее значение не перезаписывается.")]
+        public bool WriteFormatToModel { get; set; }
+
         [Category("4. Основная надпись: значения по умолчанию"), DisplayName("Обозначение"),
          Description("Подставляется, если свойство «Обозначение» пусто и в 3D-модели, и в чертеже.")]
         public string DefDesignation { get; set; }
@@ -302,6 +309,7 @@ namespace GroupSpecB
             FixSpeciaTransaction = true;
             FillMaterialProps = true;
             FillMassScaleProps = true;
+            WriteFormatToModel = true;
             SpecDesignation = ""; BaseDesignation = "";
             DefDesignation = ""; DefName = ""; DefCompany = ""; DefDesigner = ""; DefChecker = "";
             DefTechControl = ""; DefNormControl = ""; DefApprover = ""; DefLitera = "";
