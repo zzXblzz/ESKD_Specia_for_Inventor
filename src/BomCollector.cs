@@ -220,14 +220,31 @@ namespace GroupSpecB
             bool found = false;
             string newKey = null;
             List<string> errors = new List<string>();
-            foreach (string file in files)
+            List<string> done = new List<string>();
+            foreach (string execFile in files)
             {
+                string file = execFile;
                 bool opened = false;
                 AssemblyDocument asm = null;
                 try
                 {
                     asm = OpenAssembly(app, file, out opened);
                     Document doc = (Document)asm;
+                    if (asm.ComponentDefinition.IsiAssemblyMember)
+                    {
+                        // член iAssembly изменить нельзя (E_FAIL), а его копию виртуальных компонентов Inventor
+                        // из фабрики не обновляет — пишем в фабрику, оттуда же они и читаются (VirtualProps)
+                        string fp = FactoryPath(doc);
+                        if (fp == null) throw new Exception("член iAssembly, фабрика не найдена");
+                        if (opened) try { doc.Close(true); } catch { }
+                        asm = null;
+                        file = fp;
+                        if (done.Exists(x => string.Equals(x, file, StringComparison.OrdinalIgnoreCase))) continue;
+                        asm = OpenAssembly(app, file, out opened);
+                        doc = (Document)asm;
+                    }
+                    if (done.Exists(x => string.Equals(x, file, StringComparison.OrdinalIgnoreCase))) continue;
+                    done.Add(file);
                     bool wasDirty = doc.Dirty;
                     int n = WriteVirtualRows(asm, r, key, title, ref found, ref newKey);
                     if (n < 0) continue;
@@ -738,7 +755,7 @@ namespace GroupSpecB
                 if (def.Type == ObjectTypeEnum.kVirtualComponentDefinitionObject)
                 {
                     VirtualComponentDefinition vd = (VirtualComponentDefinition)def;
-                    ps = vd.PropertySets;
+                    ps = VirtualProps(vd);
                     isVirtual = true;
                     it.Key = "virtual:" + Prop(ps, DesignTracking, "Part Number") + "|" + vd.DisplayName;
                 }
@@ -793,11 +810,34 @@ namespace GroupSpecB
                 if (def.Type == ObjectTypeEnum.kVirtualComponentDefinitionObject)
                 {
                     VirtualComponentDefinition vd = (VirtualComponentDefinition)def;
-                    return "virtual:" + Prop(vd.PropertySets, DesignTracking, "Part Number") + "|" + vd.DisplayName;
+                    return "virtual:" + Prop(VirtualProps(vd), DesignTracking, "Part Number") + "|" + vd.DisplayName;
                 }
                 return ((Document)def.Document).FullDocumentName;
             }
             catch { return null; }
+        }
+
+        /// <summary>Свойства виртуального компонента. У члена iAssembly это копия из фабрики, которую Inventor
+        /// не даёт изменить и при правке фабрики не обновляет, — действуют свойства одноимённого компонента
+        /// фабрики (туда пишет надстройка).</summary>
+        public static PropertySets VirtualProps(VirtualComponentDefinition vd)
+        {
+            try
+            {
+                AssemblyDocument owner = vd.Document as AssemblyDocument;
+                if (owner != null && owner.ComponentDefinition.IsiAssemblyMember)
+                {
+                    AssemblyComponentDefinition fcd = (AssemblyComponentDefinition)owner.ComponentDefinition.iAssemblyMember.ParentFactory.Parent;
+                    foreach (ComponentOccurrence o in fcd.Occurrences)
+                    {
+                        if (o.Definition.Type != ObjectTypeEnum.kVirtualComponentDefinitionObject) continue;
+                        VirtualComponentDefinition fv = (VirtualComponentDefinition)o.Definition;
+                        if (fv.DisplayName == vd.DisplayName) return fv.PropertySets;
+                    }
+                }
+            }
+            catch (Exception ex) { Log.Write("Виртуальный компонент " + vd.DisplayName + " в фабрике iAssembly", ex); }
+            return vd.PropertySets;
         }
 
         static readonly Regex StandardRx = new Regex(@"(?<![\p{L}\p{Nd}])(ГОСТ|ИСО|ISO|DIN)(?![\p{L}])",
