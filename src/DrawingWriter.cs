@@ -692,6 +692,41 @@ namespace GroupSpecB
             return null;
         }
 
+        /// <summary>Подпись по фамилии в графу «Подп.» (x — левый, y — нижний край графы); если эскизного
+        /// обозначения с такой фамилией нет — предупреждение, графа остаётся пустой.</summary>
+        void Signature(string surname, double x, double y)
+        {
+            SketchedSymbolDefinition sig = FindSignature(surname);
+            if (sig != null) pendingSignatures.Add(new KeyValuePair<SketchedSymbolDefinition, Point2d>(sig, P(x, y)));
+            else
+            {
+                string w = "В чертеже нет эскизного обозначения-подписи «" + surname.Trim() + "» — графа «Подп.» оставлена пустой.";
+                if (!Warnings.Contains(w)) Warnings.Add(w);
+            }
+        }
+
+        /// <summary>Строки изменений основной надписи (пользовательские свойства чертежа ChangeNo1…ChangeDate2):
+        /// первая — над строкой заголовков yHead, вторая — над первой. Графы — ссылки на свойства, в графе
+        /// «Подп.» вместо фамилии — подпись.</summary>
+        void ChangeRows(double[] cx, double yHead)
+        {
+            Document d = (Document)dwg;
+            for (int k = 0; k < SpecTitleBlock.Changes.Length; k++)
+            {
+                SpecTitleBlock.ChangeRow row = SpecTitleBlock.Changes[k];
+                double yb = yHead + 5 * k, yt = yb + 5;
+                TitleField[] cols = { row.No, row.Sheet, row.Doc, null, row.Date };
+                for (int c = 0; c < 5; c++)
+                {
+                    if (cols[c] == null || SpecTitleBlock.Value(d, cols[c]) == "") continue;
+                    TitleField b = SpecTitleBlock.Bound(d, cols[c]);
+                    if (b != null) FieldText(cx[c], yb, cx[c + 1], yt, b, c == 2 ? 'L' : 'C', 2.5);
+                }
+                string signer = SpecTitleBlock.Value(d, row.Sign);
+                if (signer != "") Signature(signer, cx[3], yb);
+            }
+        }
+
         /// <summary>Подписи вставляются поверх эскиза листа (эскизные обозначения добавляются только на активный лист).</summary>
         void PlaceSignatures(Sheet sh)
         {
@@ -736,10 +771,10 @@ namespace GroupSpecB
                     // дата — ссылка на свойство чертежа «Дата создания» (Inventor выводит её как дд.мм.гг)
                     FieldText(cx[4], yb2, cx[5], yt, SpecTitleBlock.CreationDate, 'C', 2.5);
                     // подпись — эскизное обозначение с именем-фамилией; точка вставки — левый нижний угол графы «Подп.»
-                    SketchedSymbolDefinition sig = FindSignature(surname);
-                    if (sig != null) pendingSignatures.Add(new KeyValuePair<SketchedSymbolDefinition, Point2d>(sig, P(cx[3], yb2)));
+                    Signature(surname, cx[3], yb2);
                 }
             }
+            ChangeRows(cx, y0 + 30);
 
             // правая часть
             double xr = cx[5];
@@ -775,6 +810,7 @@ namespace GroupSpecB
             for (int c = 1; c <= 5; c++) Line(cx[c], y0, cx[c], y0 + 15, true);
             string[] head = { "Изм.", "Лист", "№ докум.", "Подп.", "Дата" };
             for (int c = 0; c < 5; c++) Text(cx[c], y0, cx[c + 1], y0 + 5, head[c], 'C', 2.5);
+            ChangeRows(cx, y0 + 5);
             double xl = FR - 10;
             Line(xl, y0, xl, y0 + 15, true);
             Line(xl, y0 + 8, FR, y0 + 8, true);
