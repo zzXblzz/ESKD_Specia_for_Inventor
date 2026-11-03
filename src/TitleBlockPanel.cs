@@ -39,6 +39,17 @@ namespace GroupSpecB
                 AddBox(people[i], 17, yt - 5, 40, yt, 8f, false, HorizontalAlignment.Left);
                 AddDate(people[i], 55, yt - 5, 65, yt);
             }
+            // строки изменений: первая — над заголовками, вторая — над ней; в «Подп.» — фамилия, на листе — подпись
+            for (int k = 0; k < SpecTitleBlock.Changes.Length; k++)
+            {
+                TitleField[] cols = SpecTitleBlock.Changes[k].Fields;
+                float yb = 30 + 5 * k;
+                for (int c = 0; c < 5; c++)
+                {
+                    TextBox tb = AddBox(cols[c], cx[c], yb, cx[c + 1], yb + 5, 8f, false, c == 2 ? HorizontalAlignment.Left : HorizontalAlignment.Center);
+                    if (c == 4) AddDateBox(tb, cols[c]);
+                }
+            }
             AddBox(SpecTitleBlock.Designation, 65, 25, 185, 40, 14f, false, HorizontalAlignment.Center);
             AddBox(SpecTitleBlock.Name, 65, 0, 135, 25, 12f, true, HorizontalAlignment.Center);
             AddLabel("Лит.", 135, 20, 150, 25, ContentAlignment.MiddleCenter);
@@ -64,20 +75,26 @@ namespace GroupSpecB
         Color ColorFor(TitleField f)
         {
             if (state.Edited.Contains(f.Key)) return EditedColor;
+            if (f.User) return state.Get(f.Key) != "" ? DrawingColor : ModelColor;
             string s = state.Source(f.Key);
             return s == TitleState.FromModel ? ModelColor : s == TitleState.FromDrawing ? DrawingColor : DefaultColor;
         }
 
         string TipFor(TitleField f)
         {
-            string s = state.Edited.Contains(f.Key) ? "исправлено — по кнопке «Сформировать» будет записано в 3D-модель и в чертёж"
+            if (f.User)
+                return "Изменение, графа «" + f.Label + "» — пользовательское свойство чертежа «" + f.PropName + "»" +
+                       (f.Label == "Подп." ? ". Введите фамилию: на листе вместо неё будет подпись (эскизное обозначение с этим именем)" : "") +
+                       (f.Label == "Дата" ? ". Правая кнопка мыши — календарь" : "") +
+                       (state.Edited.Contains(f.Key) ? ". Исправлено — по кнопке «Сформировать» будет записано в чертёж." : ".");
+            string s =state.Edited.Contains(f.Key) ? "исправлено — по кнопке «Сформировать» будет записано в 3D-модель и в чертёж"
                      : state.Source(f.Key) == TitleState.FromModel ? "значение из 3D-модели"
                      : state.Source(f.Key) == TitleState.FromDrawing ? "в 3D-модели пусто — значение из чертежа"
                      : "в модели и чертеже пусто — значение по умолчанию (вкладка «Параметры»)";
             return f.Label + " — свойство «" + f.PropName + "»: " + s;
         }
 
-        void AddBox(TitleField f, float x1, float y1, float x2, float y2, float fontSize, bool multiline, HorizontalAlignment align)
+        TextBox AddBox(TitleField f, float x1, float y1, float x2, float y2, float fontSize, bool multiline, HorizontalAlignment align)
         {
             Rectangle r = R(x1, y1, x2, y2);
             TextBox tb = new TextBox { BorderStyle = BorderStyle.None, Multiline = multiline, TextAlign = align,
@@ -94,6 +111,14 @@ namespace GroupSpecB
                 RefreshDates();
             };
             Controls.Add(tb);
+            return tb;
+        }
+
+        /// <summary>Графа «Дата» строки изменения: ввод вручную или правой кнопкой мыши — календарь.</summary>
+        void AddDateBox(TextBox tb, TitleField f)
+        {
+            tb.ContextMenuStrip = new ContextMenuStrip();   // пустое меню не показывается — вместо стандартного календарь (ContextMenu нет в .NET 8 Inventor 2026)
+            tb.MouseUp += (s, e) => { if (e.Button == MouseButtons.Right) ShowCalendar(tb, d => tb.Text = d); };
         }
 
         readonly Dictionary<TitleField, Label> dateCells = new Dictionary<TitleField, Label>();
@@ -108,7 +133,11 @@ namespace GroupSpecB
             Label l = new Label { TextAlign = ContentAlignment.MiddleCenter, Bounds = R(x1, y1, x2, y2), Cursor = Cursors.Hand,
                                   Font = new Font("Segoe UI", 7.5f, FontStyle.Italic) };
             tip.SetToolTip(l, "Дата — свойство чертежа «Дата создания». Правая кнопка мыши — выбрать дату в календаре.");
-            l.MouseUp += (s, e) => { if (e.Button == MouseButtons.Right) ShowCalendar(l); };
+            l.MouseUp += (s, e) =>
+            {
+                if (e.Button == MouseButtons.Right)
+                    ShowCalendar(l, d => { state.SetByUser(SpecTitleBlock.CreationDate.Key, d); RefreshDates(); });
+            };
             dateCells[person] = l;
             Controls.Add(l);
             RefreshDates();
@@ -124,15 +153,17 @@ namespace GroupSpecB
             }
         }
 
-        void ShowCalendar(Control near)
+        Action<string> calendarPick;   // куда записать выбранную дату (дд.мм.гг)
+
+        void ShowCalendar(Control near, Action<string> pick)
         {
+            calendarPick = pick;
             if (calendar == null)
             {
                 calendar = new MonthCalendar { MaxSelectionCount = 1, ShowTodayCircle = true };
                 calendar.DateSelected += (s, e) =>
                 {
-                    state.SetByUser(SpecTitleBlock.CreationDate.Key, e.Start.ToString(SpecTitleBlock.DateFormat));
-                    RefreshDates();
+                    if (calendarPick != null) calendarPick(e.Start.ToString(SpecTitleBlock.DateFormat));
                     calendarDrop.Close();
                 };
                 calendarDrop.Items.Add(new ToolStripControlHost(calendar) { Margin = Padding.Empty, Padding = Padding.Empty });

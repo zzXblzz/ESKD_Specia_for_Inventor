@@ -15,10 +15,14 @@ namespace GroupSpecB
         public string PropName;   // имя свойства (для создания)
         public string SetName;    // имя набора (для создания пользовательского набора)
         public bool ModelDoc;     // ссылка вида Document='model' (так Inventor хранит свойства набора GOST Properties)
+        public bool User;         // пользовательское свойство чертежа: ищется по имени, PropertyID назначает Inventor
 
         /// <summary>Разметка поля-ссылки на свойство: значение на листе меняется вместе со свойством.</summary>
         public string Markup()
         {
+            if (User)
+                return "<Property Document='drawing' PropertySet='User Defined Properties' Property='" + PropName + "' FormatID='" +
+                       FormatId + "' PropertyID='" + PropId + "'>" + PropName + "</Property>";
             if (ModelDoc)
                 return "<Property Document='model' PropertySet='" + SetName + "' Property='" + PropName + "' FormatID='" +
                        FormatId + "' PropertyID='" + PropId + "'>" + Label + "</Property>";
@@ -66,6 +70,39 @@ namespace GroupSpecB
 
         public static readonly TitleField[] All = { Designation, Name, Company, Designer, Checker, TechControl, NormControl, Approver, Litera };
 
+        const string USER = "{D5CDD505-2E9C-101B-9397-08002B2CF9AE}";   // Inventor User Defined Properties
+
+        /// <summary>Строка изменения: графы «Изм.», «Лист», «№ докум.», «Подп.» (фамилия — на листе вместо неё
+        /// подпись), «Дата». Пользовательские свойства чертежа, в 3D-модель не копируются.</summary>
+        public class ChangeRow
+        {
+            public TitleField No, Sheet, Doc, Sign, Date;
+            public TitleField[] Fields { get { return new[] { No, Sheet, Doc, Sign, Date }; } }
+        }
+
+        static TitleField UserField(string name, string label)
+        {
+            return new TitleField { Key = name, Label = label, FormatId = USER, PropName = name, User = true };
+        }
+
+        static ChangeRow MakeChange(int n)
+        {
+            return new ChangeRow
+            {
+                No = UserField("ChangeNo" + n, "Изм."), Sheet = UserField("ChangeSheet" + n, "Лист"),
+                Doc = UserField("ChangeDoc" + n, "№ докум."), Sign = UserField("ChangeSign" + n, "Подп."),
+                Date = UserField("ChangeDate" + n, "Дата"),
+            };
+        }
+
+        /// <summary>Строки изменений снизу вверх: [0] — над строкой заголовков, [1] — над ней.</summary>
+        public static readonly ChangeRow[] Changes = { MakeChange(1), MakeChange(2) };
+
+        static IEnumerable<TitleField> ChangeFields()
+        {
+            foreach (ChangeRow r in Changes) foreach (TitleField f in r.Fields) yield return f;
+        }
+
         /// <summary>Дата в строках с фамилией — «Дата создания» чертежа (в модель не копируется).</summary>
         public static readonly TitleField CreationDate = new TitleField { Key = "Date", Label = "Дата", FormatId = DT, PropId = 4, PropName = "Creation Time" };
         public const string DateFormat = "dd.MM.yy";
@@ -80,8 +117,17 @@ namespace GroupSpecB
 
         static Property Find(Document d, TitleField f)
         {
-            try { return d.PropertySets[f.FormatId].ItemByPropId[f.PropId]; }
+            try { return f.User ? d.PropertySets[f.FormatId][f.PropName] : d.PropertySets[f.FormatId].ItemByPropId[f.PropId]; }
             catch { return null; }
+        }
+
+        /// <summary>Графа пользовательского свойства с PropertyID этого чертежа (для ссылки на листе) или null,
+        /// если свойства нет.</summary>
+        public static TitleField Bound(Document d, TitleField f)
+        {
+            Property p = Find(d, f);
+            if (p == null) return null;
+            return new TitleField { Key = f.Key, Label = f.Label, FormatId = f.FormatId, PropId = p.PropId, PropName = f.PropName, User = true };
         }
 
         public static string Value(Document d, TitleField f)
@@ -125,7 +171,8 @@ namespace GroupSpecB
             PropertySet ps;
             try { ps = d.PropertySets[f.FormatId]; }
             catch { ps = d.PropertySets.Add(f.SetName ?? f.PropName, f.FormatId); }
-            ps.Add(v, f.PropName, f.PropId);
+            if (f.User) ps.Add(v, f.PropName);
+            else ps.Add(v, f.PropName, f.PropId);
         }
 
         /// <summary>Значения граф: из 3D-модели; если там пусто — из чертежа; если пусто и там — по умолчанию.</summary>
@@ -141,6 +188,12 @@ namespace GroupSpecB
             }
             st.Values[CreationDate.Key] = DrawingDate(dwg);
             st.Sources[CreationDate.Key] = TitleState.FromDrawing;
+            // строки изменений — только из чертежа
+            foreach (TitleField f in ChangeFields())
+            {
+                st.Values[f.Key] = dwg != null ? Value((Document)dwg, f) : "";
+                st.Sources[f.Key] = TitleState.FromDrawing;
+            }
             return st;
         }
 
@@ -159,6 +212,16 @@ namespace GroupSpecB
                 try { SetValue(d, f, v); changed.Add(f.Label + " = " + v); }
                 catch (Exception ex) { errors.Add(f.Label + ": " + ex.Message); }
             }
+            // строки изменений — в пользовательские свойства чертежа (пустое значение не создаёт свойство)
+            if (edited != null)
+                foreach (TitleField f in ChangeFields())
+                {
+                    if (!edited.Edited.Contains(f.Key)) continue;
+                    string v = edited.Get(f.Key).Trim();
+                    if (v == Value(d, f) || (v == "" && Find(d, f) == null)) continue;
+                    try { SetValue(d, f, v); changed.Add("Изменение: " + f.PropName + " = " + v); }
+                    catch (Exception ex) { errors.Add(f.PropName + ": " + ex.Message); }
+                }
             // дата, выбранная в окне, — в «Дата создания» чертежа
             if (edited != null && edited.Edited.Contains(CreationDate.Key))
             {
