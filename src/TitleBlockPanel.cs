@@ -117,7 +117,7 @@ namespace GroupSpecB
         /// <summary>Графа «Дата» строки изменения: ввод вручную или правой кнопкой мыши — календарь.</summary>
         void AddDateBox(TextBox tb, TitleField f)
         {
-            tb.ContextMenu = new ContextMenu();   // вместо стандартного меню — календарь
+            tb.ContextMenuStrip = new ContextMenuStrip();   // пустое меню не показывается — вместо стандартного календарь (ContextMenu нет в .NET 8 Inventor 2026)
             tb.MouseUp += (s, e) => { if (e.Button == MouseButtons.Right) ShowCalendar(tb, d => tb.Text = d); };
         }
 
