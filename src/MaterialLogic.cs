@@ -108,6 +108,35 @@ namespace GroupSpecB
         static double R(double v, int digits) { return Math.Round(v, digits, MidpointRounding.AwayFromZero); }
     }
 
+    /// <summary>Графа «Примечание» спецификации — как в ESKD Specia: свойство «Примечание» (Comments) на вкладке
+    /// «Сводка» iProperties. У детали без чертежа (формат «БЧ») с пустым примечанием туда пишется формула
+    /// «=&lt;Mass&amp;&gt; кг» — масса из пользовательского свойства Mass&amp; (его ведёт Specia), Inventor пересчитывает её сам.
+    /// Без Inventor API (проверяется в UnitTests).</summary>
+    public static class NoteLogic
+    {
+        public const string MassProp = "Mass&";
+        public const string MassExpression = "=<Mass&> кг";
+
+        /// <summary>Формат «БЧ» (без чертежа), в т. ч. «Б.Ч.», «бч».</summary>
+        public static bool IsNoDrawing(string format)
+        {
+            string f = (format ?? "").Replace(".", "").Replace(" ", "").Trim();
+            return string.Equals(f, "БЧ", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Формула примечания ссылается на массу (Mass&amp;).</summary>
+        public static bool UsesMass(string expression)
+        {
+            return (expression ?? "").IndexOf("<" + MassProp + ">", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>Текст, который покажет Inventor для формулы MassExpression.</summary>
+        public static string MassNote(string mass)
+        {
+            return (mass ?? "").Trim() + " кг";
+        }
+    }
+
     /// <summary>Материал дробью в графе «Наименование»: сортамент, над чертой — Up, под чертой — Down.</summary>
     public class MaterialFraction
     {
