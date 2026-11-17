@@ -41,12 +41,13 @@ namespace GroupSpecB
         CheckBox onDrawingBox;          // ГОСТ 2.106: спецификация над основной надписью листа чертежа
         bool loading;
 
-        static readonly string[] TypeValues = { SpecTypes.Auto, SpecTypes.Gost2106, SpecTypes.Gost2113 };
+        static readonly string[] TypeValues = { SpecTypes.Auto, SpecTypes.Gost2106, SpecTypes.Gost2113, SpecTypes.Gost2113Form5 };
         static readonly string[] TypeItems =
         {
             "По числу 3D-моделей",
             "ГОСТ 2.106 (формы 1, 1а)",
             "ГОСТ 2.113 (групповая)",
+            "ГОСТ 2.113, форма 5 (до 3 исполн.)",
         };
 
         static readonly string[] FieldCols = { "Section", "Format", "Zone", "Pos", "Designation", "Name" };
@@ -75,7 +76,7 @@ namespace GroupSpecB
             ToolStrip ts = new ToolStrip();
             ts.GripStyle = ToolStripGripStyle.Hidden;
             ts.Items.Add(new ToolStripLabel("Тип:"));
-            typeBox = new ToolStripComboBox { DropDownStyle = ComboBoxStyle.DropDownList, AutoSize = false, Width = 190,
+            typeBox = new ToolStripComboBox { DropDownStyle = ComboBoxStyle.DropDownList, AutoSize = false, Width = 230,
                 ToolTipText = "По умолчанию: одна 3D-модель — спецификация по ГОСТ 2.106, несколько — групповая по ГОСТ 2.113" };
             typeBox.Items.AddRange(TypeItems);
             typeBox.SelectedIndex = Math.Max(0, Array.IndexOf(TypeValues, data.SpecType ?? SpecTypes.Auto));

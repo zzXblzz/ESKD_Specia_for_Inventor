@@ -38,6 +38,7 @@ static class UnitTests
         Run("Масса и масштаб в чертеже", MassScale);
         Run("Тип спецификации по числу 3D-моделей", SpecTypeAuto);
         Run("Спецификация по ГОСТ 2.106", Gost2106);
+        Run("Групповая по форме 5 ГОСТ 2.113", Form5);
         Run("Свободные строки между разделами", Gaps);
         Run("Повторное чтение BOM, сохранение и загрузка из BOM", Reload);
         Run("Ссылки «поз.» в текстах чертежа", PosRefs);
@@ -447,6 +448,55 @@ static class UnitTests
         Check(SpecData.FromXml(data.ToXml()).OnDrawingSheet, "выбор сохраняется в чертеже");
         data.SpecType = SpecTypes.Gost2113;
         Check(!data.OnDrawing && Layout.Build(data).Count > 1, "групповая — всегда на отдельных листах");
+    }
+
+    static void Form5()
+    {
+        Execution e0 = Exec("АБВГ.100000.001"), e1 = Exec("АБВГ.100000.001-01"), e2 = Exec("АБВГ.100000.001-02");
+        SpecData data = Merge(
+            Bom(e0, Item("d1", "АБВГ.300000.001", "Скоба", Sections.Parts, "2")),
+            Bom(e1, Item("d1", "АБВГ.300000.001", "Скоба", Sections.Parts, "1"),
+                    Item("d2", "АБВГ.300000.001-01", "Скоба", Sections.Parts, "1")),
+            Bom(e2, Item("d3", "АБВГ.300000.002", "Только в -02", Sections.Parts, "4")));
+        data.SpecType = SpecTypes.Gost2113Form5;
+        Eq(SpecTypes.Gost2113Form5, data.EffectiveType(), "тип выбран вручную");
+        Eq(SpecTypes.Gost2113Form5, SpecData.FromXml(data.ToXml()).SpecType, "тип сохраняется в чертеже");
+        Check(data.IsForm5 && data.Portrait && !data.Is2106, "форма 5 — групповая на А4 книжном");
+        data.OnDrawingSheet = true;
+        Check(!data.OnDrawing, "форма 5 — только на отдельных листах");
+        data.OnDrawingSheet = false;
+        SpecLogic.Renumber(data);
+
+        List<string> warn = new List<string>();
+        List<SpecPage> pages = Layout.Build(data, warn);
+        Eq(1, pages.Count, "один лист");
+        Check(pages[0].Form5 && pages[0].Portrait && !pages[0].Gost2106, "лист формы 5");
+        Eq(3, pages[0].Execs.Count, "три графы «Кол. на»");
+        Eq(29, Layout.Capacity(pages[0], data.Settings), "строк на первом листе — как у формы 1");
+        Eq(32, Layout.Capacity(new SpecPage { Number = 2, Form5 = true }, data.Settings), "строк на последующих листах");
+        Eq(0, warn.Count, "до трёх исполнений — без предупреждений");
+        List<SpecLine> lines = DataLines(pages);
+        SpecLine d1 = lines.Find(l => l.FirstOfRow && l.Row.Key == "d1");
+        Eq("2", d1.Qty[0], "кол. в исполнении «–»");
+        Eq("1", d1.Qty[1], "кол. в исполнении «01»");
+        Check(lines.Exists(l => l.FirstOfRow && l.Row.Key == "d3" && l.Qty[2] == "4"), "строка только исполнения -02 входит");
+        SpecLine d2 = lines.Find(l => l.FirstOfRow && l.Row.Key == "d2");
+        Eq("-01", d2.Designation, "сокращение «-01» как в групповой (п. 5.3)");
+
+        // наименование переносится по ширине графы 43 мм, а не 63 мм
+        string longName = "Кронштейн крепления верхний правый усиленный";
+        Check(Layout.NameLines(longName, "", data.Settings, null, Layout.WNameForm5).Count >
+              Layout.NameLines(longName, "", data.Settings).Count, "перенос наименования по графе 43 мм");
+
+        // больше трёх исполнений — по три на лист и предупреждение
+        Execution e3 = Exec("АБВГ.100000.001-03");
+        data.Executions.Add(e3);
+        data.Rows.Find(r => r.Key == "d1").Qty.Add(new QtyEntry(e3.Key, "5"));
+        warn.Clear();
+        pages = Layout.Build(data, warn);
+        Eq(2, pages.Count, "четвёртое исполнение — на следующем листе");
+        Eq(1, pages[1].Execs.Count, "на втором листе одна графа");
+        Eq(1, warn.Count, "предупреждение о числе исполнений");
     }
 
     static string Kinds(SpecPage p)

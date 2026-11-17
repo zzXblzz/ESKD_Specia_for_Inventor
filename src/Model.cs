@@ -57,10 +57,13 @@ namespace GroupSpecB
         public const string Auto = "";          // по числу 3D-моделей: одна — ГОСТ 2.106, несколько — ГОСТ 2.113
         public const string Gost2106 = "2.106";
         public const string Gost2113 = "2.113";
+        public const string Gost2113Form5 = "2.113-5";   // групповая по форме 5: не более трёх исполнений, А4 книжный (п. 5.5.2 и)
 
         public static string Title(string type)
         {
-            return type == Gost2106 ? "Спецификация (ГОСТ 2.106, формы 1 и 1а)" : "Групповая спецификация (ГОСТ 2.113-75, вариант Б)";
+            if (type == Gost2106) return "Спецификация (ГОСТ 2.106, формы 1 и 1а)";
+            if (type == Gost2113Form5) return "Групповая спецификация (ГОСТ 2.113-75, форма 5 — не более трёх исполнений)";
+            return "Групповая спецификация (ГОСТ 2.113-75, вариант Б)";
         }
     }
 
@@ -370,11 +373,18 @@ namespace GroupSpecB
         /// одна — ГОСТ 2.106, несколько — групповая по ГОСТ 2.113.</summary>
         public string EffectiveType()
         {
-            if (SpecType == SpecTypes.Gost2106 || SpecType == SpecTypes.Gost2113) return SpecType;
+            if (SpecType == SpecTypes.Gost2106 || SpecType == SpecTypes.Gost2113 || SpecType == SpecTypes.Gost2113Form5) return SpecType;
             return Executions.Count > 1 ? SpecTypes.Gost2113 : SpecTypes.Gost2106;
         }
 
         [XmlIgnore] public bool Is2106 { get { return EffectiveType() == SpecTypes.Gost2106; } }
+
+        /// <summary>Групповая спецификация по форме 5 ГОСТ 2.113 (не более трёх исполнений, А4 книжный).</summary>
+        [XmlIgnore] public bool IsForm5 { get { return EffectiveType() == SpecTypes.Gost2113Form5; } }
+
+        /// <summary>Листы А4 книжные с полем подшивки слева (ГОСТ 2.106 формы 1/1а и ГОСТ 2.113 форма 5),
+        /// иначе — групповая по варианту Б на А4 альбомных (формы 1б/1а).</summary>
+        [XmlIgnore] public bool Portrait { get { return Is2106 || IsForm5; } }
 
         /// <summary>Спецификация выводится на лист чертежа над основной надписью (только ГОСТ 2.106;
         /// групповая всегда на отдельных листах).</summary>

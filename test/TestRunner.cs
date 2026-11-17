@@ -43,7 +43,7 @@ static class TestRunner
             DateTime t0 = DateTime.Now;
             string warn = session.Refresh(s => Console.WriteLine("  " + s));
             Console.WriteLine("refresh " + (DateTime.Now - t0).TotalSeconds.ToString("0.0") + "s" + (warn != null ? "\nWARN: " + warn : ""));
-            // --type 2.106 | 2.113 — тип спецификации, выбранный вручную (без флага — как сохранено / по числу 3D-моделей)
+            // --type 2.106 | 2.113 | 2.113-5 (форма 5) — тип спецификации, выбранный вручную (без флага — как сохранено / по числу 3D-моделей)
             int ti = Array.IndexOf(args, "--type");
             if (ti >= 0 && ti + 1 < args.Length) { data.SpecType = args[ti + 1]; SpecLogic.EnsureAssemblyDrawingRow(data); SpecLogic.Renumber(data); }
             // --ondrawing on|off — ГОСТ 2.106 над основной надписью листа чертежа
