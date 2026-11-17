@@ -32,6 +32,33 @@ namespace GroupSpecB
             return "";
         }
 
+        /// <summary>Формула свойства (Expression), иначе "".</summary>
+        static string PropExpression(PropertySets sets, string setName, string propName)
+        {
+            try { return sets[setName][propName].Expression ?? ""; }
+            catch { return ""; }
+        }
+
+        /// <summary>Примечание компонента — как в ESKD Specia: свойство «Примечание» (Comments) на вкладке «Сводка»;
+        /// прежнее пользовательское свойство «Примечание» — запасной вариант.</summary>
+        public static string NoteOf(PropertySets sets)
+        {
+            string v = Prop(sets, Summary, "Comments");
+            return v != "" ? v : UserProp(sets, "Примечание");
+        }
+
+        /// <summary>Масса модели для Mass&amp; (как UserMass), null — не деталь/сборка или не посчитать.</summary>
+        static string MassOf(Document d)
+        {
+            try
+            {
+                if (d.DocumentType != DocumentTypeEnum.kPartDocumentObject &&
+                    d.DocumentType != DocumentTypeEnum.kAssemblyDocumentObject) return null;
+                return MassScaleLogic.FormatMass(DrawingMaterial.ModelMass(d));
+            }
+            catch (Exception ex) { Log.Write("Масса " + d.FullFileName, ex); return null; }
+        }
+
         /// <summary>Наименование: Description или Title — по настройке, с запасным вариантом.</summary>
         public static string NameOf(PropertySets sets, string nameProperty)
         {
@@ -99,7 +126,11 @@ namespace GroupSpecB
                         if (modifiable) { step = "проверка доступа"; modifiable = d.IsModifiable; }
                         step = "чтение свойств";
                         List<string[]> changes;
-                        try { changes = Changes(d.PropertySets, r, title); }
+                        bool wasDirty = d.Dirty; // до расчёта массы: он может пометить документ изменённым
+                        string mass = null;
+                        if (modifiable && !r.IsEdited("Note") && NoteLogic.IsNoDrawing(r.Format)) { step = "расчёт массы"; mass = MassOf(d); }
+                        step = "чтение свойств";
+                        try { changes = Changes(d.PropertySets, r, title, mass); }
                         catch (Exception ex)
                         {
                             if (fp == null) throw;
@@ -122,20 +153,19 @@ namespace GroupSpecB
                                     string err = WriteToDocument(app, fp, r.Section);
                                     if (err == null) { written++; viaFactory++; } else { failed.Add(Name(r) + " — фабрика: " + err); secOk = false; }
                                 }
-                                else
+                                else if (c.Length < 4)
                                 {
                                     failed.Add(Name(r) + " — " + (fp != null ? "член iPart/iAssembly: «" + c[1] + "» задаётся в таблице фабрики" : "модель только для чтения"));
                                     if (c[1] == "Part Number") desOk = false;
                                     else if (c[1] == SectionProp) secOk = false;
                                     else if (c[1] == "LastFormat") fmtOk = false;
-                                    else if (c[1] == "Примечание") noteOk = false;
+                                    else if (c[1] == "Comments" || c[1] == "Примечание") noteOk = false;
                                     else nameOk = false;
                                 }
                             }
                             continue;
                         }
                         step = "запись свойств";
-                        bool wasDirty = d.Dirty;
                         props += Apply(d.PropertySets, changes);
                         written++;
                         if (!wasDirty)
@@ -170,7 +200,8 @@ namespace GroupSpecB
         }
         /// <summary>Свойства, которые нужно изменить, чтобы модель совпала со строкой спецификации:
         /// {набор, свойство, значение}.</summary>
-        static List<string[]> Changes(PropertySets sets, SpecRow r, bool title)
+        /// mass — текущая масса модели (для Mass&amp; у детали без чертежа), null — не записывать.
+        static List<string[]> Changes(PropertySets sets, SpecRow r, bool title, string mass = null)
         {
             List<string[]> changes = new List<string[]>();
             if (UserProp(sets, SectionProp) != r.Section) changes.Add(new[] { UserDefined, SectionProp, r.Section });
@@ -181,11 +212,26 @@ namespace GroupSpecB
                 if (title && Prop(sets, Summary, "Title") != r.Name) changes.Add(new[] { Summary, "Title", r.Name });
                 if (!title && Prop(sets, DesignTracking, "Description") != r.Name) changes.Add(new[] { DesignTracking, "Description", r.Name });
             }
-            // формат и примечание читаются из пользовательских свойств (ReadBom)
+            // формат — из пользовательского свойства, примечание — Comments («Сводка») (ReadBom)
             if (r.IsEdited("Format") && Sections.HasFormat(r.Section) && UserProp(sets, "LastFormat", "Формат") != r.Format)
                 changes.Add(new[] { UserDefined, "LastFormat", r.Format });
-            if (r.IsEdited("Note") && UserProp(sets, "Примечание") != r.Note)
-                changes.Add(new[] { UserDefined, "Примечание", r.Note });
+            if (r.IsEdited("Note"))
+            {
+                if (NoteOf(sets) != r.Note) changes.Add(new[] { Summary, "Comments", r.Note });
+                // прежнее пользовательское «Примечание» читается, когда Comments пуст, — не даём ему «воскреснуть»
+                string old = UserProp(sets, "Примечание");
+                if (old != "" && old != r.Note) changes.Add(new[] { UserDefined, "Примечание", r.Note });
+            }
+            else if (mass != null && NoteLogic.IsNoDrawing(r.Format))
+            {
+                // деталь без чертежа с пустым примечанием: Mass& (до формулы, которая на него ссылается) и
+                // «=<Mass&> кг»; если формула уже есть — только обновляем Mass&. Пометка «auto»: члену
+                // iPart/iAssembly не записывается и ошибкой не считается
+                bool empty = NoteOf(sets) == "";
+                if ((empty || NoteLogic.UsesMass(PropExpression(sets, Summary, "Comments"))) && UserProp(sets, NoteLogic.MassProp) != mass)
+                    changes.Add(new[] { UserDefined, NoteLogic.MassProp, mass, "auto" });
+                if (empty) changes.Add(new[] { Summary, "Comments", NoteLogic.MassExpression, "auto" });
+            }
             return changes;
         }
 
@@ -198,7 +244,13 @@ namespace GroupSpecB
                 PropertySet ps = sets[c[0]];
                 Property p = null;
                 foreach (Property x in ps) if (x.Name == c[1]) { p = x; break; }
-                if (p != null) p.Value = c[2]; else ps.Add(c[2], c[1]);
+                if (c[2].StartsWith("="))
+                {
+                    // формула, как в окне iProperties («=<Mass&> кг»)
+                    if (p == null) p = ps.Add("", c[1]);
+                    p.Expression = c[2];
+                }
+                else if (p != null) p.Value = c[2]; else ps.Add(c[2], c[1]);
                 if (c[1] != SectionProp) n++;
             }
             return n;
@@ -776,7 +828,20 @@ namespace GroupSpecB
                 it.Designation = Prop(ps, DesignTracking, "Part Number");
                 it.Name = NameOf(ps, settings.NameProperty);
                 it.Format = UserProp(ps, "LastFormat", "Формат");
-                it.Note = UserProp(ps, "Примечание");
+                it.Note = NoteOf(ps);
+                if (compDoc != null && PropExpression(ps, Summary, "Comments") == NoteLogic.MassExpression)
+                {
+                    // Mass& могла устареть (обновится при «Сформировать») — показываем текущую массу
+                    string mass = MassOf(compDoc);
+                    if (mass != null) it.Note = NoteLogic.MassNote(mass);
+                }
+                else if (it.Note == "" && NoteLogic.IsNoDrawing(it.Format))
+                {
+                    // деталь без чертежа: в примечании масса (в модель формула «=<Mass&> кг» пишется при «Сформировать»)
+                    string mass = compDoc != null ? MassOf(compDoc) : null;
+                    if (mass == null) mass = UserProp(ps, NoteLogic.MassProp);
+                    if (mass != "") it.Note = NoteLogic.MassNote(mass);
+                }
 
                 // для членов iPart / iAssembly действует значение фабрики (туда пишет надстройка),
                 // своя копия у члена может быть устаревшей

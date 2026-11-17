@@ -320,6 +320,10 @@ static class UnitTests
         Eq("1235", MassScaleLogic.FormatMass(1234.6), "до 10 т — целые кг");
         Eq("12,3т", MassScaleLogic.FormatMass(12345), "до 100 т — тонны");
         Eq("123т", MassScaleLogic.FormatMass(123456), "от 100 т — целые тонны");
+        Check(NoteLogic.IsNoDrawing("БЧ") && NoteLogic.IsNoDrawing(" бч ") && NoteLogic.IsNoDrawing("Б.Ч."), "формат БЧ");
+        Check(!NoteLogic.IsNoDrawing("А4") && !NoteLogic.IsNoDrawing("") && !NoteLogic.IsNoDrawing(null), "А4 и пустой — не БЧ");
+        Check(NoteLogic.UsesMass("=<Mass&> кг") && !NoteLogic.UsesMass("Покупное") && !NoteLogic.UsesMass(null), "формула с массой");
+        Eq("1,25 кг", NoteLogic.MassNote("1,25"), "примечание с массой");
         Eq("1:1", MassScaleLogic.FormatScale(1), "1:1");
         Eq("2:1", MassScaleLogic.FormatScale(2), "увеличение");
         Eq("2,5:1", MassScaleLogic.FormatScale(2.5), "увеличение 2,5");
