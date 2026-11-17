@@ -7,7 +7,9 @@ namespace GroupSpecB
 {
     /// <summary>Вывод спецификации на листы чертежа.
     /// Групповая по варианту Б: первый лист — форма 1б, последующие — форма 1а ГОСТ 2.113-75 (А4, альбомная ориентация).
-    /// По ГОСТ 2.106: первый лист — форма 1, последующие — форма 1а (А4, книжная ориентация).</summary>
+    /// По ГОСТ 2.106: первый лист — форма 1, последующие — форма 1а (А4, книжная ориентация).
+    /// Групповая по форме 5 ГОСТ 2.113 (не более трёх исполнений): все листы — таблица формы 5 (А4, книжная),
+    /// основная надпись первого листа — форма 2, последующих — форма 2а.</summary>
     public class DrawingWriter
     {
         public const string AttrSet = "GroupSpecB";
@@ -26,6 +28,10 @@ namespace GroupSpecB
         const double HeadTop = 190, HeadMid = 183, HeadBottom = 175, RowH = 8;
         // Форма 1 / 1а ГОСТ 2.106: графы 6 / 6 / 8 / 70 / 63 / 10 / 22 мм, головка 15 мм.
         static readonly double[] ColX2106 = { 20, 26, 32, 40, 110, 173, 183, 205 };
+        // Форма 5 ГОСТ 2.113: графы 6 / 6 / 8 / 70 / 43 / 3×10 «Кол. на» / 22 мм, головка 15 мм; над графами
+        // количества — «Кол. на», под ней — номера исполнений («–», «01», «02»).
+        static readonly double[] ColXForm5 = { 20, 26, 32, 40, 110, 153, 163, 173, 183, 205 };
+        const double HeadForm5Split = 7;   // верхний ярус головки над графами «Кол. на», мм
         const double Head2106Top = 292, Head2106Bottom = 277;
         const double Thick = 0.05, Thin = 0.025;   // толщина линий, см
 
@@ -46,10 +52,12 @@ namespace GroupSpecB
             this.app = app; this.dwg = dwg; this.data = data;
             tg = app.TransientGeometry;
             gost2106 = data.Is2106;
-            if (gost2106) { FL = 20; FR = 205; FB = 5; FT = 292; }
+            portrait = data.Portrait;
+            if (portrait) { FL = 20; FR = 205; FB = 5; FT = 292; }
         }
 
         readonly bool gost2106;
+        readonly bool portrait;   // А4 книжный: ГОСТ 2.106 формы 1/1а или ГОСТ 2.113 форма 5
 
         public static DrawingDocument CreateDrawing(Application app)
         {
@@ -134,7 +142,7 @@ namespace GroupSpecB
             {
                 if (progress != null) progress("Лист " + (i + 1) + (pages != null ? " из " + pages.Count : ""));
                 Sheet sh = dwg.Sheets.Add(DrawingSheetSizeEnum.kA4DrawingSheetSize,
-                    gost2106 ? PageOrientationTypeEnum.kPortraitPageOrientation : PageOrientationTypeEnum.kLandscapePageOrientation,
+                    portrait ? PageOrientationTypeEnum.kPortraitPageOrientation : PageOrientationTypeEnum.kLandscapePageOrientation,
                     (gost2106 ? SheetPrefix2106 : SheetPrefix) + "-" + (i + 1), Type.Missing, Type.Missing);
                 sh.AttributeSets.Add(SheetAttrSet);
                 // листы спецификации — отдельный документ со своей нумерацией: в счёт листов чертежа не входят
@@ -472,7 +480,7 @@ namespace GroupSpecB
 
         void DrawPage(SpecPage page, int totalSheets, List<string> decadeNote)
         {
-            if (gost2106) { DrawPage2106(page, totalSheets); return; }
+            if (portrait) { DrawPage2106(page, totalSheets); return; }
             SpecSettings s = data.Settings;
             double h = s.FontHeight;
             int cap = Layout.Capacity(page, s);
@@ -562,24 +570,43 @@ namespace GroupSpecB
         void DrawTable2106(SpecPage page, double dx, double top, double yb, int cap)
         {
             double h = data.Settings.FontHeight;
-            double[] cx = new double[ColX2106.Length];
-            for (int c = 0; c < cx.Length; c++) cx[c] = ColX2106[c] + dx;
+            bool form5 = page.Form5;
+            double[] src = form5 ? ColXForm5 : ColX2106;
+            int nq = form5 ? Layout.ExecsPerPageForm5 : 1;   // графы количества: cx[5] .. cx[5 + nq]
+            double[] cx = new double[src.Length];
+            for (int c = 0; c < cx.Length; c++) cx[c] = src[c] + dx;
+            int cn = 5 + nq;                                  // левая граница графы «Примечание»
             double xl = cx[0], xr = cx[cx.Length - 1];
             double headBottom = top - (Head2106Top - Head2106Bottom);
 
             // --- головка таблицы
             Line(xl, headBottom, xr, headBottom, true);
             Line(xl, yb, xr, yb, true);
-            for (int c = 1; c < cx.Length - 1; c++) Line(cx[c], top, cx[c], yb, true);
             double hy = (top + headBottom) / 2;
+            for (int c = 1; c < cx.Length - 1; c++)
+                Line(cx[c], c > 5 && c < cn ? top - HeadForm5Split : top, cx[c], yb, true);   // между графами «Кол. на» — от нижнего яруса
             TextVertical((cx[0] + cx[1]) / 2, hy, "Формат", 2.5);
             TextVertical((cx[1] + cx[2]) / 2, hy, "Зона", 2.5);
             TextVertical((cx[2] + cx[3]) / 2, hy, "Поз.", 2.5);
             Text(cx[3], headBottom, cx[4], top, "Обозначение", 'C', h);
-            Text(cx[4], headBottom, cx[5], top, "Наименование", 'C', h);
-            TextVertical((cx[5] + cx[6]) / 2, hy, "Кол.", h);
-            Text(cx[6], hy, cx[7], top, "Приме-", 'C', h);   // в графу 22 мм — в две строки
-            Text(cx[6], headBottom, cx[7], hy, "чание", 'C', h);
+            if (form5)
+            {
+                // «Наименование» в графу 43 мм — в две строки, как на форме 5
+                Text(cx[4], hy, cx[5], top, "Наимено-", 'C', h);
+                Text(cx[4], headBottom, cx[5], hy, "вание", 'C', h);
+                double ys = top - HeadForm5Split;
+                Line(cx[5], ys, cx[cn], ys, true);
+                Text(cx[5], ys, cx[cn], top, "Кол. на", 'C', h);
+                for (int k = 0; k < nq && k < page.Execs.Count; k++)
+                    Text(cx[5 + k], headBottom, cx[6 + k], ys, page.Execs[k].Label, 'C', h);
+            }
+            else
+            {
+                Text(cx[4], headBottom, cx[5], top, "Наименование", 'C', h);
+                TextVertical((cx[5] + cx[6]) / 2, hy, "Кол.", h);
+            }
+            Text(cx[cn], hy, cx[cn + 1], top, "Приме-", 'C', h);   // в графу 22 мм — в две строки
+            Text(cx[cn], headBottom, cx[cn + 1], hy, "чание", 'C', h);
 
             // --- строки
             for (int r = 1; r < cap; r++)
@@ -600,10 +627,11 @@ namespace GroupSpecB
                 Text(cx[0], y1, cx[1], y2, l.Format, 'C', Math.Min(h, 2.5));
                 Text(cx[1], y1, cx[2], y2, l.Zone, 'C', Math.Min(h, 2.5));
                 Text(cx[2], y1, cx[3], y2, l.Pos, 'C', h);
-                Text(cx[3], y1, cx[4], y2, l.Designation, 'L', h);
+                if (!string.IsNullOrEmpty(l.AbbrevPrefix)) TextAbbreviated(cx[3], y1, cx[4], y2, l.AbbrevPrefix, l.Designation, h);
+                else Text(cx[3], y1, cx[4], y2, l.Designation, 'L', h);
                 NameCell(cx[4], y1, cx[5], y2, l, h);
-                Text(cx[5], y1, cx[6], y2, l.Qty[0], 'C', h);
-                Text(cx[6], y1, cx[7], y2, l.Note, 'L', h);
+                for (int k = 0; k < nq; k++) Text(cx[5 + k], y1, cx[6 + k], y2, l.Qty[k], 'C', h);
+                Text(cx[cn], y1, cx[cn + 1], y2, l.Note, 'L', h);
             }
         }
 

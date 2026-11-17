@@ -27,15 +27,20 @@ namespace GroupSpecB
         public List<Execution> Execs = new List<Execution>(); // исполнения в графах этого листа (до 10)
         public List<SpecLine> Lines = new List<SpecLine>();
         public bool Gost2106;            // лист спецификации по ГОСТ 2.106 (формы 1 / 1а), иначе групповой (1б / 1а)
+        public bool Form5;               // лист групповой спецификации по форме 5 ГОСТ 2.113 (А4 книжный, до трёх исполнений)
         public bool OnDrawing;           // таблица на листе чертежа над основной надписью: одна, без разбиения на листы
+        public bool Portrait { get { return Gost2106 || Form5; } }
         public bool First { get { return Number == 1; } }
     }
 
     /// <summary>Вёрстка: перенос текста по строкам, разделы, разбиение на листы и десятки исполнений.</summary>
     public static class Layout
     {
-        // ширины граф по ГОСТ 2.113 формы 1а/1б, мм; у ГОСТ 2.106 формы 1/1а примечание — 22 мм
-        public const double WDesignation = 70, WName = 63, WNote = 34, WNote2106 = 22;
+        // ширины граф по ГОСТ 2.113 формы 1а/1б, мм; у ГОСТ 2.106 формы 1/1а примечание — 22 мм;
+        // у формы 5 ГОСТ 2.113 наименование — 43 мм (за счёт трёх граф «Кол. на» по 10 мм), примечание — 22 мм
+        public const double WDesignation = 70, WName = 63, WNote = 34, WNote2106 = 22, WNameForm5 = 43;
+        /// <summary>Сколько исполнений помещается в графах «Кол.» одного листа: 10 (вариант Б), 3 (форма 5).</summary>
+        public const int ExecsPerPage = 10, ExecsPerPageForm5 = 3;
 
         /// <summary>Разбивка текста графы на строки.
         /// Если в тексте есть «$» (или перевод строки) — это границы строк, задаваемые пользователем:
@@ -112,7 +117,8 @@ namespace GroupSpecB
         /// <summary>Строки графы «Наименование». Материал из трёх частей (MaterialLogic.Fraction) пишется дробью
         /// в две строки: сортамент и числитель с чертой, под числителем — знаменатель; текст перед материалом —
         /// строками выше, после него — ниже. С переносами «$» дробью пишется часть, которая сама — материал.</summary>
-        public static List<SpecLine> NameLines(string text, string material, SpecSettings s, Func<string, double> measure = null)
+        public static List<SpecLine> NameLines(string text, string material, SpecSettings s, Func<string, double> measure = null,
+                                               double width = WName)
         {
             List<SpecLine> res = new List<SpecLine>();
             string src = (text ?? "").Replace("\r\n", "\n");
@@ -123,23 +129,24 @@ namespace GroupSpecB
                 MaterialFraction f = MaterialLogic.Fraction(part, material, out prefix, out suffix);
                 if (f == null) { prefix = part; suffix = ""; }
                 if (f == null || prefix != "")
-                    foreach (string t in manual ? new List<string> { prefix.Trim() } : Wrap(prefix, WName, s, measure))
+                    foreach (string t in manual ? new List<string> { prefix.Trim() } : Wrap(prefix, width, s, measure))
                         res.Add(new SpecLine { Name = t });
                 if (f == null) continue;
                 res.Add(new SpecLine { Name = f.Up, Frac = f, FracUp = true });
                 res.Add(new SpecLine { Name = f.Down, Frac = f });
                 if (suffix != "")
-                    foreach (string t in manual ? new List<string> { suffix } : Wrap(suffix, WName, s, measure))
+                    foreach (string t in manual ? new List<string> { suffix } : Wrap(suffix, width, s, measure))
                         res.Add(new SpecLine { Name = t });
             }
             return res;
         }
 
-        static List<SpecLine> RowLines(SpecRow r, List<Execution> execs, SpecSettings s, Func<string, double> measure, bool gost2106)
+        static List<SpecLine> RowLines(SpecRow r, List<Execution> execs, SpecSettings s, Func<string, double> measure,
+                                       bool gost2106, bool form5 = false)
         {
             List<string> des = Wrap(r.Designation, WDesignation, s, measure);
-            List<SpecLine> name = NameLines(r.Name, r.Material, s, measure);
-            List<string> note = Wrap(r.Note, gost2106 ? WNote2106 : WNote, s, measure);
+            List<SpecLine> name = NameLines(r.Name, r.Material, s, measure, form5 ? WNameForm5 : WName);
+            List<string> note = Wrap(r.Note, gost2106 || form5 ? WNote2106 : WNote, s, measure);
             int n = Math.Max(des.Count, Math.Max(name.Count, note.Count));
             List<SpecLine> res = new List<SpecLine>();
             for (int i = 0; i < n; i++)
@@ -184,11 +191,17 @@ namespace GroupSpecB
         public static List<SpecPage> Build(SpecData data, List<string> warnings = null, Func<string, double> measure = null)
         {
             SpecSettings s = data.Settings;
-            bool gost2106 = data.Is2106;
+            bool gost2106 = data.Is2106, form5 = data.IsForm5;
             List<Execution> all = data.QtyExecutions();
+            // «десяток» — группа исполнений одного листа: 10 граф «Кол.» у варианта Б, 3 у формы 5
+            int per = form5 ? ExecsPerPageForm5 : ExecsPerPage;
             List<List<Execution>> decades = new List<List<Execution>>();
-            for (int i = 0; i < all.Count; i += 10) decades.Add(all.GetRange(i, Math.Min(10, all.Count - i)));
+            for (int i = 0; i < all.Count; i += per) decades.Add(all.GetRange(i, Math.Min(per, all.Count - i)));
             if (decades.Count == 0) decades.Add(new List<Execution>());
+            if (form5 && all.Count > ExecsPerPageForm5 && warnings != null)
+                warnings.Add("Форма 5 ГОСТ 2.113 допускается при числе исполнений не более трёх (п. 5.5.2 и), включено " +
+                             all.Count + ": исполнения сверх трёх выведены на следующих листах по три. Для большего числа " +
+                             "исполнений выберите тип «ГОСТ 2.113 (групповая)».");
 
             List<SpecPage> pages = new List<SpecPage>();
             for (int d = 0; d < decades.Count; d++)
@@ -217,13 +230,13 @@ namespace GroupSpecB
                             for (int k = 0; k < data.GapLines(section, GapKind.After); k++) block.Add(Blank());
                             firstInSection = false;
                         }
-                        block.AddRange(RowLines(r, execs, s, measure, gost2106));
+                        block.AddRange(RowLines(r, execs, s, measure, gost2106, form5));
                         blocks.Add(block);
                     }
                     for (int k = 0; k < data.GapLines(section, GapKind.Reserve); k++) blocks.Add(new List<SpecLine> { Blank() });
                 }
 
-                SpecPage page = NewPage(pages, d, execs, gost2106);
+                SpecPage page = NewPage(pages, d, execs, gost2106, form5);
                 page.OnDrawing = data.OnDrawing;
                 foreach (List<SpecLine> block in blocks)
                 {
@@ -232,7 +245,7 @@ namespace GroupSpecB
                     {
                         // пустые строки в конце блока-резерва на новый лист не переносим
                         if (block.Count == 1 && block[0].Kind == LineKind.Blank) continue;
-                        page = NewPage(pages, d, execs, gost2106);
+                        page = NewPage(pages, d, execs, gost2106, form5);
                     }
                     // запись не помещается даже на пустой лист — разрываем
                     List<SpecLine> rest = block;
@@ -248,7 +261,7 @@ namespace GroupSpecB
                             warnings.Add("Запись «" + what + "» длиннее листа и разорвана между листами " +
                                          page.Number + " и " + (page.Number + 1) + ". Сократите текст или задайте переносы «$».");
                         }
-                        page = NewPage(pages, d, execs, gost2106);
+                        page = NewPage(pages, d, execs, gost2106, form5);
                     }
                     page.Lines.AddRange(rest);
                 }
@@ -261,9 +274,9 @@ namespace GroupSpecB
             return pages;
         }
 
-        static SpecPage NewPage(List<SpecPage> pages, int decade, List<Execution> execs, bool gost2106)
+        static SpecPage NewPage(List<SpecPage> pages, int decade, List<Execution> execs, bool gost2106, bool form5)
         {
-            SpecPage p = new SpecPage { Number = pages.Count + 1, Decade = decade, Execs = execs, Gost2106 = gost2106 };
+            SpecPage p = new SpecPage { Number = pages.Count + 1, Decade = decade, Execs = execs, Gost2106 = gost2106, Form5 = form5 };
             pages.Add(p);
             return p;
         }
@@ -271,7 +284,8 @@ namespace GroupSpecB
         public static int Capacity(SpecPage p, SpecSettings s)
         {
             if (p.OnDrawing) return int.MaxValue / 2;   // высота таблицы — по числу строк, проверяется при выводе
-            if (p.Gost2106) return p.First ? Math.Max(1, s.RowsFirst2106) : Math.Max(1, s.RowsNext2106);
+            // форма 5 ГОСТ 2.113 — та же сетка А4 книжного, что у форм 1/1а ГОСТ 2.106
+            if (p.Portrait) return p.First ? Math.Max(1, s.RowsFirst2106) : Math.Max(1, s.RowsNext2106);
             return p.First ? Math.Max(1, s.RowsFirst) : Math.Max(1, s.RowsNext);
         }
 
