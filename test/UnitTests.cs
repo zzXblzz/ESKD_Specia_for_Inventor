@@ -29,6 +29,7 @@ static class UnitTests
         Run("Слияние строк и единицы измерения", MergeUnits);
         Run("Подписи граф исполнений", ExecutionLabels);
         Run("Позиции и резерв между разделами", Positions);
+        Run("Варианты одной детали по возрастанию обозначения", VariantOrder);
         Run("Сокращение «-02» только для обозначений ЕСКД", Abbreviation);
         Run("Запись длиннее листа", LongRecord);
         Run("Больше 10 исполнений", Decades);
@@ -219,6 +220,24 @@ static class UnitTests
         Eq("2", data.Rows.Find(r => r.Key == "p2").Pos, "вторая деталь");
         Eq("5", data.Rows.Find(r => r.Key == "s1").Pos, "следующий раздел — после резерва в 2 номера");
         Eq(0, SpecLogic.DuplicatePositions(data).Count, "повторов позиций нет");
+    }
+
+    static void VariantOrder()
+    {
+        // в основном исполнении — «…02.01-01», в -01 — «…02.01»: варианты всё равно по возрастанию обозначения
+        Execution main = Exec("АБВГ.100000.001"), e1 = Exec("АБВГ.100000.001-01");
+        SpecData data = Merge(
+            Bom(main, Item("k1", "АБВГ.300000.001-01", "Крышка", Sections.Parts, "1"),
+                      Item("z", "АБВГ.300000.002", "Заглушка", Sections.Parts, "2")),
+            Bom(e1, Item("k0", "АБВГ.300000.001", "Крышка", Sections.Parts, "1"),
+                    Item("z", "АБВГ.300000.002", "Заглушка", Sections.Parts, "2"),
+                    Item("o", "АБВГ.300000.000", "Только в -01", Sections.Parts, "1")));
+        Eq("1", data.Rows.Find(r => r.Key == "k0").Pos, "«…001» перед «…001-01»");
+        Eq("2", data.Rows.Find(r => r.Key == "k1").Pos, "«…001-01» после «…001»");
+        Eq("3", data.Rows.Find(r => r.Key == "z").Pos, "следующая деталь основного исполнения");
+        Eq("4", data.Rows.Find(r => r.Key == "o").Pos, "деталь не из основного исполнения — в конце");
+        Eq("1", data.Rows.Find(r => r.Key == "k1").GetQty(main.Key), "количество -01 — в основном исполнении");
+        Eq("", data.Rows.Find(r => r.Key == "k0").GetQty(main.Key), "у «…001» основного исполнения нет");
     }
 
     static void Abbreviation()

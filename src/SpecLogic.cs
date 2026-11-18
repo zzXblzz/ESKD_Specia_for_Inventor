@@ -347,7 +347,8 @@ namespace GroupSpecB
         }
 
         /// <summary>Порядок записи по ГОСТ 2.106 и 2.113 п. 5.5.2 д): по разделам; в разделе — составные
-        /// части основного исполнения, затем не применявшиеся в нём; варианты одной позиции подряд.
+        /// части основного исполнения, затем не применявшиеся в нём; варианты одной позиции подряд,
+        /// по возрастанию обозначения (без номера исполнения, затем -01, -02 …).
         /// Затем — сквозная нумерация позиций.</summary>
         public static void SortAndNumber(SpecData data)
         {
@@ -390,14 +391,10 @@ namespace GroupSpecB
                 if (r.InMain || r.Source != RowSource.Bom && HasQty(r, data.Executions.Count > 0 ? data.Executions[0].Key : ""))
                     g.InMain = true;
             }
+            // варианты одной составной части («…02.01», «…02.01-01») — по возрастанию обозначения, какой бы
+            // из них ни входил в основное исполнение: основное исполнение влияет только на место группы
             foreach (Group g in groups)
-            {
-                StableSort(g.Rows, (a, b) =>
-                {
-                    if (a.InMain != b.InMain) return a.InMain ? -1 : 1;
-                    return NaturalCompare(SortKey(a), SortKey(b));
-                });
-            }
+                StableSort(g.Rows, (a, b) => NaturalCompare(SortKey(a), SortKey(b)));
             StableSort(groups, (a, b) =>
             {
                 if (a.InMain != b.InMain) return a.InMain ? -1 : 1;
