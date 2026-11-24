@@ -603,11 +603,17 @@ namespace GroupSpecB
             // строки iAssembly и состояния модели — пакетами по файлу фабрики
             Dictionary<string, List<Execution>> groups = new Dictionary<string, List<Execution>>(StringComparer.OrdinalIgnoreCase);
             List<string> order = new List<string>();
+            // вид чертежа, показывающий не основное состояние модели, ссылается на документ «файл<состояние>»:
+            // BOM такого документа Inventor не отдаёт (E_FAIL), поэтому он читается через сам файл сборки
+            // с переключением на это состояние — так же, как состояния модели параметрической сборки
             foreach (Execution e in defs)
             {
-                if (e.Kind != KindRow && e.Kind != KindState) continue;
+                string groupPath;
+                if (e.Kind == KindRow || e.Kind == KindState) groupPath = e.Path;
+                else if (StateOfPath(e.Path) != null) groupPath = FileOfPath(e.Path);
+                else continue;
                 List<Execution> g;
-                if (!groups.TryGetValue(e.Path, out g)) { g = new List<Execution>(); groups[e.Path] = g; order.Add(e.Path); }
+                if (!groups.TryGetValue(groupPath, out g)) { g = new List<Execution>(); groups[groupPath] = g; order.Add(groupPath); }
                 g.Add(e);
             }
             int done = 0, total = defs.Count;
@@ -616,10 +622,12 @@ namespace GroupSpecB
                 bool opened;
                 AssemblyDocument asm;
                 try { asm = OpenAssembly(app, path, out opened); }
-                catch (Exception ex) { errors.Add(System.IO.Path.GetFileName(path) + ": " + ex.Message); continue; }
+                catch (Exception ex) { errors.Add(FileNameOf(path) + ": " + ex.Message); continue; }
                 try
                 {
-                    foreach (ExecutionBom eb in ReadVariants(asm, groups[path], settings, progress, ref done, total, errors))
+                    // состояния переключаются только в фабрике состояний, не в документе основного состояния
+                    AssemblyDocument variants = groups[path].Exists(x => x.Kind != KindRow) ? StateFactory(asm) : asm;
+                    foreach (ExecutionBom eb in ReadVariants(variants, groups[path], settings, progress, ref done, total, errors))
                         byExec[eb.Execution] = eb;
                 }
                 finally { if (opened) try { ((Document)asm).Close(true); } catch { } }
@@ -627,20 +635,20 @@ namespace GroupSpecB
             // отдельные модели исполнений
             foreach (Execution e in defs)
             {
-                if (e.Kind == KindRow || e.Kind == KindState) continue;
+                if (e.Kind == KindRow || e.Kind == KindState || StateOfPath(e.Path) != null) continue;
                 done++;
-                if (progress != null) progress("Исполнение " + done + " из " + total + ": " + System.IO.Path.GetFileName(e.Path));
+                if (progress != null) progress("Исполнение " + done + " из " + total + ": " + FileNameOf(e.Path));
                 bool opened;
                 AssemblyDocument asm;
                 try { asm = OpenAssembly(app, e.Path, out opened); }
-                catch (Exception ex) { errors.Add(System.IO.Path.GetFileName(e.Path) + ": " + ex.Message); continue; }
+                catch (Exception ex) { errors.Add(FileNameOf(e.Path) + ": " + ex.Message); continue; }
                 try
                 {
                     string pn = Prop(asm.PropertySets, DesignTracking, "Part Number");
                     if (pn != "") e.Designation = pn;
                     byExec[e] = ReadBomSafe(asm, e, settings);
                 }
-                catch (Exception ex) { errors.Add(System.IO.Path.GetFileName(e.Path) + ": " + ex.Message); }
+                catch (Exception ex) { errors.Add(FileNameOf(e.Path) + ": " + ex.Message); }
                 finally { if (opened) try { ((Document)asm).Close(true); } catch { } }
             }
             foreach (Execution e in defs)
@@ -666,7 +674,9 @@ namespace GroupSpecB
                 foreach (Execution e in execs)
                 {
                     done++;
-                    if (progress != null) progress("Исполнение " + done + " из " + total + ": " + e.Member);
+                    string state = e.Kind == KindState ? e.Member : e.Kind == KindRow ? null : StateOfPath(e.Path);
+                    string label = e.Kind == KindRow || e.Kind == KindState ? e.Member : FileNameOf(e.Path);
+                    if (progress != null) progress("Исполнение " + done + " из " + total + ": " + label);
                     try
                     {
                         ReleaseBomReferences();
@@ -680,16 +690,31 @@ namespace GroupSpecB
                             string pn = pnCol > 0 ? CellValue(row, pnCol) : "";
                             e.Designation = pn != "" ? pn : Prop(asm.PropertySets, DesignTracking, "Part Number");
                         }
-                        else
+                        ModelState s = null;
+                        if (e.Kind != KindRow)
                         {
-                            ModelState s = cd.ModelStates[e.Member];
+                            try { s = cd.ModelStates[state]; }
+                            catch { throw new Exception("нет состояния модели «" + state + "»"); }
                             s.Activate();
                         }
                         asm.Update();
-                        if (e.Kind == KindState) e.Designation = Prop(asm.PropertySets, DesignTracking, "Part Number");
+                        if (e.Kind != KindRow)
+                        {
+                            string pn = Prop(asm.PropertySets, DesignTracking, "Part Number");
+                            if (e.Kind == KindState || pn != "") e.Designation = pn;
+                            // состояние без своего BOM (отличается, например, только свойствами) — BOM у состояния,
+                            // которому он делегирован; в самом состоянии BOM недоступен (E_FAIL)
+                            ModelState owner = BomOwner(s);
+                            if (owner.Name != s.Name)
+                            {
+                                ReleaseBomReferences();
+                                owner.Activate();
+                                asm.Update();
+                            }
+                        }
                         res.Add(ReadBomSafe(asm, e, settings));
                     }
-                    catch (Exception ex) { errors.Add(e.Member + ": " + ex.Message); }
+                    catch (Exception ex) { errors.Add(label + ": " + ex.Message); }
                 }
             }
             finally
@@ -731,15 +756,75 @@ namespace GroupSpecB
         public static AssemblyDocument OpenAssembly(Application app, string fullDocumentName, out bool opened)
         {
             opened = false;
+            // сначала точное совпадение полного имени: у документа состояния модели «файл<состояние>»
+            // то же имя файла, что и у самой сборки, но BOM у него не читается
             foreach (Document d in app.Documents)
             {
                 if (d.DocumentType != DocumentTypeEnum.kAssemblyDocumentObject) continue;
-                if (string.Equals(d.FullDocumentName, fullDocumentName, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(d.FullFileName, fullDocumentName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(d.FullDocumentName, fullDocumentName, StringComparison.OrdinalIgnoreCase))
+                    return (AssemblyDocument)d;
+            }
+            foreach (Document d in app.Documents)
+            {
+                if (d.DocumentType != DocumentTypeEnum.kAssemblyDocumentObject) continue;
+                if (StateOfPath(d.FullDocumentName) != null) continue;
+                if (string.Equals(d.FullFileName, fullDocumentName, StringComparison.OrdinalIgnoreCase))
                     return (AssemblyDocument)d;
             }
             opened = true;
             return (AssemblyDocument)app.Documents.Open(fullDocumentName, false);
+        }
+
+        /// <summary>Документ, в котором можно переключать состояния модели: для документа состояния
+        /// (в том числе основного — у него то же полное имя, что у файла) это фабрика состояний.</summary>
+        public static AssemblyDocument StateFactory(AssemblyDocument asm)
+        {
+            try
+            {
+                AssemblyComponentDefinition cd = asm.ComponentDefinition;
+                if (cd.IsModelStateMember && cd.FactoryDocument != null) return (AssemblyDocument)cd.FactoryDocument;
+            }
+            catch { }
+            return asm;
+        }
+
+        /// <summary>Состояние модели, BOM которого действует для s: если BOM состояния делегирован другому
+        /// (обычно основному), то это другое состояние, иначе само s.</summary>
+        public static ModelState BomOwner(ModelState s)
+        {
+            for (int i = 0; s != null && i < 16; i++)
+            {
+                ModelState d = null;
+                try { d = s.BOMDelegate; } catch { }
+                if (d == null || d.Name == s.Name) return s;
+                s = d;
+            }
+            return s;
+        }
+
+        /// <summary>Имя состояния модели из полного имени документа «файл.iam&lt;состояние&gt;», иначе null.</summary>
+        public static string StateOfPath(string fullDocumentName)
+        {
+            if (string.IsNullOrEmpty(fullDocumentName) || !fullDocumentName.EndsWith(">")) return null;
+            int lt = fullDocumentName.LastIndexOf('<');
+            if (lt <= 0 || lt >= fullDocumentName.Length - 2) return null;
+            return fullDocumentName.Substring(lt + 1, fullDocumentName.Length - lt - 2);
+        }
+
+        /// <summary>Путь к файлу без состояния модели.</summary>
+        public static string FileOfPath(string fullDocumentName)
+        {
+            return StateOfPath(fullDocumentName) == null ? fullDocumentName
+                : fullDocumentName.Substring(0, fullDocumentName.LastIndexOf('<'));
+        }
+
+        /// <summary>Имя файла для сообщений; «&lt;состояние&gt;» сохраняется (Path.GetFileName в .NET Framework на нём падает).</summary>
+        public static string FileNameOf(string fullDocumentName)
+        {
+            if (string.IsNullOrEmpty(fullDocumentName)) return "";
+            string file = FileOfPath(fullDocumentName);
+            int slash = Math.Max(file.LastIndexOf('\\'), file.LastIndexOf('/'));
+            return fullDocumentName.Substring(slash + 1);
         }
         /// <summary>Пока в .NET живы обёртки над BOMView/BOMRow, Inventor не пересчитывает BOM после смены
         /// строки iAssembly или состояния модели — количества «застывают» на первом прочитанном исполнении.

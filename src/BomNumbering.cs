@@ -141,7 +141,9 @@ namespace GroupSpecB
         {
             changed = false;
             bool opened;
-            AssemblyDocument asm = BomCollector.OpenAssembly(app, t.Path, out opened);
+            AssemblyDocument openedDoc = BomCollector.OpenAssembly(app, t.Path, out opened);
+            // состояния модели переключаются в фабрике состояний, не в документе основного состояния
+            AssemblyDocument asm = t.States.Count > 0 ? BomCollector.StateFactory(openedDoc) : openedDoc;
             int numbered = 0;
             try
             {
@@ -167,10 +169,15 @@ namespace GroupSpecB
                 {
                     if (t.States.Count > 0)
                     {
+                        List<string> numberedStates = new List<string>();
                         foreach (string s in t.States)
                         {
+                            // состояние без своего BOM — нумеруется BOM состояния, которому он делегирован (один раз)
+                            ModelState owner = BomCollector.BomOwner(ms[s]);
+                            if (numberedStates.Contains(owner.Name)) continue;
+                            numberedStates.Add(owner.Name);
                             BomCollector.ReleaseBomReferences();
-                            ms[s].Activate();
+                            owner.Activate();
                             asm.Update();
                             bool c;
                             // номера общие для всех состояний: после первого в BOM уже новые, старые — только в первом
@@ -231,7 +238,7 @@ namespace GroupSpecB
                     if (failed.Count > 0) notes.Add("Не пересозданы члены iAssembly: " + string.Join(", ", failed));
                 }
             }
-            finally { if (opened) try { ((Document)asm).Close(true); } catch { } }
+            finally { if (opened) try { ((Document)openedDoc).Close(true); } catch { } }
             return numbered;
         }
 

@@ -96,7 +96,12 @@ namespace GroupSpecB
         {
             Execution ex = e.Exec;
             bool opened;
-            AssemblyDocument asm = BomCollector.OpenAssembly(app, ex.Path, out opened);
+            // вид чертежа с не основным состоянием модели («файл<состояние>»): BOM — через сам файл сборки
+            string state = ex.Kind == BomCollector.KindState ? ex.Member
+                : ex.Kind == BomCollector.KindRow ? null : BomCollector.StateOfPath(ex.Path);
+            AssemblyDocument openedDoc = BomCollector.OpenAssembly(app, state != null && ex.Kind != BomCollector.KindState
+                ? BomCollector.FileOfPath(ex.Path) : ex.Path, out opened);
+            AssemblyDocument asm = state != null ? BomCollector.StateFactory(openedDoc) : openedDoc;
             AssemblyComponentDefinition cd = asm.ComponentDefinition;
             bool wasDirty = ((Document)asm).Dirty;
             iAssemblyFactory factory = ex.Kind == BomCollector.KindRow && cd.IsiAssemblyFactory ? cd.iAssemblyFactory : null;
@@ -114,11 +119,11 @@ namespace GroupSpecB
                     factory.DefaultRow = row;
                     asm.Update();
                 }
-                else if (ex.Kind == BomCollector.KindState)
+                else if (state != null)
                 {
                     originalState = cd.ModelStates.ActiveModelState;
                     BomCollector.ReleaseBomReferences();
-                    cd.ModelStates[ex.Member].Activate();
+                    BomCollector.BomOwner(cd.ModelStates[state]).Activate();
                     asm.Update();
                 }
                 PlanRow(asm, e, paramPlans, overrides);
@@ -133,7 +138,7 @@ namespace GroupSpecB
                 }
                 catch (Exception err) { Log.Write("Возврат исходной строки iAssembly / состояния модели", err); }
                 try { if (!wasDirty) ((Document)asm).Dirty = false; } catch { }
-                if (opened) try { ((Document)asm).Close(true); } catch { }
+                if (opened) try { ((Document)openedDoc).Close(true); } catch { }
             }
         }
 
